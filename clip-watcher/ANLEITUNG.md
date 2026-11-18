@@ -1,0 +1,62 @@
+# clip-watcher
+
+Wartet, bis ein Twitch-Kanal live geht, nimmt auf, liest den Chat ohne Account mit,
+erkennt Ausschläge und schneidet fertige 9:16-Shorts mit Untertiteln.
+**Gepostet wird nichts automatisch.** Du siehst dir jeden Clip an.
+
+## Einrichten (einmalig, 5 Minuten)
+1. Windows: `installieren.bat` doppelklicken. Mac: `installieren.command`.
+2. `config.json` öffnen, bei `kanaele` den Kanal eintragen:
+   - `"rechte": "eigen"` = dein eigener Kanal / eigene Aufnahme
+   - `"rechte": "kampagne"` oder `"erlaubnis"` = fremder Streamer. **Dann muss bei `nachweis` ein Link oder eine
+     Notiz stehen**, wo er Clips erlaubt (Twitch-Infofeld, Discord-Regel, Kampagnenseite). Sonst startet der Kanal nicht.
+3. `starten.bat` / `starten.command` doppelklicken. Es öffnet sich die Oberfläche im Browser (http://localhost:8765). Fenster offen lassen.
+   Vom Handy im selben WLAN: `starten-handy.bat` (Mac: `python3 app.py --lan`) und dann `http://<IP-deines-PCs>:8765` öffnen. Nur im eigenen WLAN nutzen, die Oberfläche hat kein Passwort.
+
+Mehrere Kanäle: einfach weitere Blöcke in `kanaele` kopieren.
+
+## Oberfläche
+- **Neu / Gut / Verworfen:** jeden Clip ansehen, mit „Gut“ oder „Weg“ sortieren, Hook-Text eintragen (setzt ihn ins Video), Video und .srt laden.
+- **Kanäle:** Kanäle hinzufügen und entfernen (ohne Nachweis bei fremden Kanälen geht es nicht), Watcher starten/stoppen.
+- **Protokoll:** was der Watcher gerade macht.
+- Nur den Watcher ohne Oberfläche: `python watcher.py`.
+
+## Ergebnis
+Ordner `clips/<Datum>/<kanal>_<Uhrzeit>/`:
+- `short.mp4` fertiger Clip (1080x1920, Untertitel, Zoom auf die Pointe)
+- `untertitel.srt` für den YouTube-Upload
+- `info.txt` Auslöser, Chat-Wörter, was gesagt wurde, Checkliste
+- `vorschau.jpg`, `roh.mp4` (ungeschnitten, falls du anders schneiden willst)
+- `clips/liste.csv` = Tracker, Spalten wie im Projekt (in Excel öffnen)
+
+## Hook-Text einbauen
+`python hook.py "clips/2026-11-19/kanal_201533" "Das hat keiner kommen sehen"` -> `short_hook.mp4`
+(max. 8 Wörter, erscheint oben in den ersten 2,5 Sekunden)
+
+## Eigene Aufnahme (PS5/Xbox-Datei)
+`python watcher.py --datei aufnahme.mp4 --rechte eigen`
+findet die lautesten Stellen und schneidet daraus Clips.
+
+## Einstellungen (config.json)
+- `min_score`, `schwelle_faktor`: höher = weniger, aber sicherere Clips. Zu viele Clips? Erhöhen. Keine? Senken.
+- `layout`: `unschaerfe` (ganzes Bild, unscharfer Hintergrund) oder `mitte` (Mittenschnitt)
+- `whisper_modell`: `small` ist gut für Deutsch; `base` ist schneller, `medium` genauer
+- `vorlauf_s` / `nachlauf_s`: Sekunden vor und nach dem Ausschlag (18 + 12 = 30 s)
+
+## Vor jedem Post
+Clip ansehen. Kein Spoiler, keine Zwischensequenz allein, kein Leak, keine laute Musik. Eigener Hook/Kommentar drauf.
+Credit in die Beschreibung. Bezahlter Clip: „Werbung“ sichtbar.
+
+## Wenn etwas nicht klappt
+- „FFmpeg/Streamlink fehlt“: Installation wiederholen, neues Fenster öffnen.
+- Kanal bleibt bei „Warte“: er ist nicht live, oder der Name ist falsch (nur der Name, ohne twitch.tv/).
+- Erste Untertitel dauern länger, Whisper lädt einmalig sein Modell (ca. 500 MB).
+- Ohne Whisper entstehen Clips trotzdem, nur ohne Untertitel.
+- Untertitelschrift: bei Mac in `config.json` `"schrift": "Helvetica"` setzen.
+
+## Trends, Tracker, Caption, Dauerbetrieb (neu)
+- **API-Schlüssel:** In `config.json` bei `youtube_api_key` eintragen oder im Tab „Trends“ einfügen (Anleitung steht dort). Ohne Schlüssel laufen Trends und Tracker nicht, der Rest schon.
+- **Trends** (`trend.py`): alle 3 Stunden eine Suche „GTA 6“ (DE, kurz, letzte 72 h). Höchstens 20 Suchen pro Tag (je 100 Quota-Punkte). Ergebnis in `trend.json`. Muster nur, wenn mindestens 3 Kanäle sie zeigen.
+- **Tracker** (`tracker.py`): stündlich Aufrufe, Likes, Kommentare der Clips, die in der Karte einen YouTube-Link haben. Aufrufe landen in `clips/liste.csv`, Rest in `tracker.json`.
+- **Caption:** Knopf pro Clip, Titel (max. 100 Zeichen), Beschreibung mit Credit, Hashtags. Bei `kampagne` mit „Werbung“ und den Pflichtangaben aus dem Nachweis.
+- **Dauerbetrieb:** siehe `dauerbetrieb.txt`. Aufräum-Werte in `config.json` unter `aufraeumen`, Festplattenwarnung über `min_frei_gb`.

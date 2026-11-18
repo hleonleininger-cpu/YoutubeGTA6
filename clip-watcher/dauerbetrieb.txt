@@ -1,0 +1,28 @@
+Dauerbetrieb: damit der clip-watcher rund um die Uhr läuft
+==========================================================
+
+1. Ruhemodus des PCs ausschalten
+   Windows: Einstellungen > System > Netzbetrieb und Akku > Bildschirm und Energie:
+            "Energiesparmodus / Standby" bei "Netzbetrieb" auf "Nie" stellen.
+            Der Bildschirm darf ausgehen, der PC nicht.
+   Mac:     Systemeinstellungen > Batterie/Energie > "Automatisches Ruhezustand verhindern",
+            oder im Terminal:  caffeinate -dimsu
+   Auch Hibernate/Ruhezustand und "Schnellstart" prüfen.
+
+2. Netzteil angeschlossen lassen (Laptop). Auf Akku geht der PC früher oder später schlafen.
+
+3. Fenster mit starten.bat / starten.command offen lassen. Schließen beendet den Watcher.
+
+4. Läuft ein Absturz auf? Der Watcher startet automatisch neu (höchstens 5 Versuche pro Stunde).
+   Danach erscheint in der Oberfläche ein Hinweis, und du startest ihn im Tab "Kanäle" von Hand.
+
+5. Festplatte: Die Oberfläche warnt, wenn weniger als 10 GB frei sind (config.json: "min_frei_gb").
+   Täglich wird aufgeräumt (config.json, Block "aufraeumen"):
+     weg_clips_tage  : Clips mit Status "weg" löschen, wenn älter als X Tage (Standard 3)
+     aufnahmen_tage  : Ordner "aufnahmen" löschen, wenn älter als X Tage (Standard 1)
+     roh_gut_tage    : roh.mp4 bei Clips mit Status "gut" löschen nach X Tagen (Standard 7)
+     aktiv           : false schaltet das Aufräumen aus
+
+6. Netzwerk: stabiles WLAN/LAN, kein VPN, das sich zwischendurch trennt.
+
+7. Windows-Updates: Aktive Zeiten so setzen, dass der PC nicht mitten im Stream neu startet.
