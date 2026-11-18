@@ -6,6 +6,7 @@ clip-watcher App: startet den Watcher und eine Oberfläche im Browser.
   python app.py --kein-watcher   (nur die Oberfläche, z. B. zum Ansehen alter Clips)
 """
 import argparse, json, mimetypes, os, re, subprocess, sys, threading, time
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
@@ -107,22 +108,39 @@ def clip_liste():
     out = []
     links = tracker.link_karte()
     hooktypen = tracker.feld_karte("Hook-Typ")
-    for info in sorted(CLIPS.glob("*/*/info.txt"), key=lambda p: p.stat().st_mtime, reverse=True):
+    laengen = tracker.feld_karte("Länge")
+    def entstanden(info):  # vorschau.jpg entsteht einmal beim Schnitt; Hook und Untertitel ändern sie nicht
+        v = info.parent / "vorschau.jpg"
+        return (v if v.exists() else info).stat().st_mtime
+    for info in sorted(CLIPS.glob("*/*/info.txt"), key=entstanden, reverse=True):
         d = info.parent
         if not (d / "short.mp4").exists():
             continue
         felder = {}
         for z in info.read_text(encoding="utf-8").splitlines():
-            m = re.match(r"^(Quelle|Rechte|Aufgenommen|Auslöser|Chat-Wörter|Gesagt|Hook):\s*(.*)$", z)
+            m = re.match(r"^(Quelle|Rechte|Aufgenommen|Auslöser|Chat-Wörter|Gesagt|Hook|Pointe bei):\s*(.*)$", z)
             if m:
                 felder[m.group(1)] = m.group(2).strip()
         rel = d.relative_to(CLIPS).as_posix()
         st = (d / "status.txt").read_text(encoding="utf-8").strip() if (d / "status.txt").exists() else "neu"
         ut = "fertig" if (d / "untertitel.fertig").exists() else ("keine" if (d / "untertitel.keine").exists() else "laeuft")
         video = "short_hook.mp4" if (d / "short_hook.mp4").exists() else "short.mp4"
+        pointe = re.search(r"Sekunde\s+([\d.]+)", felder.get("Pointe bei", ""))
+        laenge = re.match(r"\s*([\d.]+)", laengen.get(f"clips/{rel}", ""))
+        score = re.search(r"Chat-Ausschlag\s+(\d+)\s+statt\s+(\d+)", felder.get("Auslöser", ""))
+        frist = re.search(r"innerhalb\s+(\d+)\s*Min", felder.get("Rechte", ""), re.I)
+        try:
+            zeit_ts = int(datetime.strptime(felder.get("Aufgenommen", ""), "%d.%m.%Y %H:%M").timestamp() * 1000)
+        except ValueError:
+            zeit_ts = None
+        bild = "vorschau_hook.jpg" if (d / "vorschau_hook.jpg").exists() else "vorschau.jpg"
         out.append({"id": rel, "status": st, "video": f"/files/{rel}/{video}", "ohne_hook": f"/files/{rel}/short.mp4", "ut": ut,
                     "link": links.get(f"clips/{rel}", ""),
-                    "vorschau": f"/files/{rel}/vorschau.jpg" if (d / "vorschau.jpg").exists() else "", "hook_typ": hooktypen.get(f"clips/{rel}", ""),
+                    "vorschau": f"/files/{rel}/{bild}" if (d / bild).exists() else "",
+                    "pointe": float(pointe.group(1)) if pointe else None,
+                    "laenge": float(laenge.group(1)) if laenge else None,
+                    "score": int(score.group(1)) if score else None, "basis": int(score.group(2)) if score else None,
+                    "frist_min": int(frist.group(1)) if frist else None, "zeit_ts": zeit_ts, "hook_typ": hooktypen.get(f"clips/{rel}", ""),
                     "srt": f"/files/{rel}/untertitel.srt" if (d / "untertitel.srt").exists() else "",
                     "hook": felder.get("Hook", ""), "quelle": felder.get("Quelle", ""),
                     "rechte": felder.get("Rechte", ""), "zeit": felder.get("Aufgenommen", ""),
@@ -179,292 +197,500 @@ def hintergrund():
 HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>clip-watcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
+/* Layout: Schnittplatz. Ablage links, Sichtgerät mit eigener Zeitleiste in der Mitte, Arbeitsbereich rechts.
+   Farben aus der Vice-City-Nacht: indigofarbene Neutraltöne, Koralle markiert Hook und Pointe, Aqua markiert Abspielkopf und Auswahl. */
+:root{
+  --nacht:#100f17;--deck:#16141f;--deck2:#1d1a28;--deck3:#262234;--deck4:#302b41;
+  --rule:rgba(190,175,255,.075);--rule2:rgba(190,175,255,.14);--rule3:rgba(190,175,255,.24);
+  --ink:#f1eef9;--ink2:#a7a0bb;--ink3:#6f6985;
+  --koralle:#ff6b8b;--koralle2:#ff8ea8;--koralleT:rgba(255,107,139,.14);
+  --aqua:#4fd6c8;--aquaT:rgba(79,214,200,.14);
+  --gut:#63dba5;--gutT:rgba(99,219,165,.12);--weg:#ff7d7d;--wegT:rgba(255,125,125,.1);--bern:#ffbf5e;--bernT:rgba(255,191,94,.12);
+  --f-disp:"Space Grotesk","Segoe UI",system-ui,sans-serif;
+  --f-text:Inter,"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  color-scheme:dark;
+}
 *{box-sizing:border-box}
-:root{--bg:#0b0c10;--p1:#121419;--p2:#181b22;--p3:#1f232c;--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.13);--txt:#eceef3;--mut:#8b909d;--dim:#5d6270;--acc:#ff5c8a;--acc2:#ff7aa0;--ok:#3ddc97;--bad:#ff6b6b;--warn:#ffb547}
-html{color-scheme:dark}
-body{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--txt);font:14px/1.5 Inter,"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;overflow:hidden;background:var(--nacht);color:var(--ink);font:14px/1.5 var(--f-text);-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
 button,input,select,textarea{font:inherit;color:inherit}
-.top{flex:none;position:relative;z-index:20;height:58px;display:flex;align-items:center;gap:22px;padding:0 20px;background:rgba(11,12,16,.86);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
-.brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:15px;letter-spacing:-.01em;white-space:nowrap}
-.logo{width:28px;height:28px;border-radius:8px;background:var(--acc);display:grid;place-items:center;color:#fff}
-#tabs{display:flex;align-items:center;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none;height:100%}
-#tabs button{position:relative;height:100%;background:none;border:0;padding:0 12px;color:var(--mut);cursor:pointer;font-weight:500;white-space:nowrap;display:flex;align-items:center;gap:7px}
-#tabs button:hover{color:var(--txt)}
-#tabs button.akt{color:var(--txt)}
-#tabs button.akt::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--acc)}
-.zahl{font-size:11.5px;font-variant-numeric:tabular-nums;min-width:20px;padding:1px 6px;border-radius:999px;background:var(--p3);color:var(--mut);text-align:center}
-#tabs button.akt .zahl{background:rgba(255,92,138,.16);color:var(--acc2)}
-.trenn{width:1px;height:18px;background:var(--line2);margin:0 8px;flex:none}
-#stat{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mut);white-space:nowrap}
-.dot{width:8px;height:8px;border-radius:50%;background:var(--bad)}
-.dot.an{background:var(--ok);animation:puls 2.2s infinite}
-@keyframes puls{0%{box-shadow:0 0 0 0 rgba(61,220,151,.45)}70%{box-shadow:0 0 0 7px rgba(61,220,151,0)}100%{box-shadow:0 0 0 0 rgba(61,220,151,0)}}
-.band{flex:none;width:100%;max-width:1480px;margin:0 auto;padding:0 20px}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--aqua);outline-offset:2px}
+::selection{background:var(--koralleT)}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+/* Kopfleiste */
+.top{flex:none;height:56px;display:flex;align-items:center;gap:28px;padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px));border-bottom:1px solid var(--rule);background:var(--nacht);position:relative;z-index:20}
+.brand{display:flex;align-items:center;gap:10px;font:600 15px/1 var(--f-disp);letter-spacing:-.01em;white-space:nowrap}
+.logo{width:26px;height:26px;border-radius:7px;background:var(--koralle);display:grid;place-items:center;color:var(--nacht)}
+#tabs{display:flex;align-items:stretch;gap:4px;flex:1;height:100%;overflow-x:auto;scrollbar-width:none}
+#tabs::-webkit-scrollbar{display:none}
+#tabs button{position:relative;background:none;border:0;padding:0 10px;color:var(--ink2);font-weight:500;white-space:nowrap;display:flex;align-items:center;gap:8px;transition:color .15s}
+#tabs button:hover{color:var(--ink)}
+#tabs button.akt{color:var(--ink)}
+#tabs button.akt::after{content:"";position:absolute;left:10px;right:10px;bottom:-1px;height:2px;background:var(--koralle)}
+#tabs .zahl{font:500 11px/1 var(--f-mono);padding:3px 6px;border-radius:5px;background:var(--deck3);color:var(--ink2)}
+#tabs button.akt .zahl{background:var(--koralleT);color:var(--koralle2)}
+#stat{display:flex;align-items:center;gap:8px;padding:6px 11px;border-radius:8px;background:var(--deck);border:1px solid var(--rule);font-size:12.5px;color:var(--ink2);white-space:nowrap}
+#stat:hover{border-color:var(--rule2);color:var(--ink)}
+#stat .rec{font:600 11px/1 var(--f-mono);letter-spacing:.08em;color:var(--koralle)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink3);flex:none}
+.dot.bereit{background:var(--aqua)}
+.dot.rec{background:var(--koralle);animation:rec 1.6s ease-in-out infinite}
+@keyframes rec{50%{opacity:.35}}
+
+.band{flex:none;padding:0 max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
 .band:empty{display:none}
-main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:1480px;margin:0 auto;padding:18px 20px 24px}
+.band>*{margin-top:12px}
+main{flex:1;min-height:0;overflow-y:auto;padding:16px max(16px,env(safe-area-inset-right,0px)) 16px max(16px,env(safe-area-inset-left,0px))}
 
-.review{display:grid;grid-template-columns:290px minmax(0,1fr) 400px;gap:18px;height:100%;min-height:520px}
-.liste{overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding-right:4px}
-.listekopf{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:2px 8px 8px}
-.item{display:flex;gap:12px;align-items:stretch;text-align:left;background:transparent;border:1px solid transparent;border-radius:12px;padding:8px;cursor:pointer;transition:background .12s,border-color .12s}
-.item:hover{background:var(--p1)}
-.item.akt{background:var(--p2);border-color:var(--line2)}
-.thumb{width:48px;height:85px;flex:none;border-radius:8px;overflow:hidden;background:var(--p3);display:grid;place-items:center;color:var(--dim)}
+/* Schnittplatz */
+.platz{display:grid;grid-template-columns:304px minmax(0,1fr) 392px;gap:16px;height:100%;min-height:540px}
+
+/* Ablage */
+.ablage{display:flex;flex-direction:column;min-height:0;background:var(--deck);border:1px solid var(--rule);border-radius:16px;overflow:hidden}
+.ablkopf{flex:none;padding:12px;border-bottom:1px solid var(--rule);display:flex;flex-direction:column;gap:10px}
+.filter{display:grid;grid-template-columns:repeat(3,1fr);padding:3px;gap:3px;background:var(--nacht);border-radius:10px}
+.filter button{border:0;background:none;border-radius:7px;padding:7px 4px;color:var(--ink2);font-weight:500;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,color .15s}
+.filter button:hover{color:var(--ink)}
+.filter button.akt{background:var(--deck3);color:var(--ink)}
+.filter .n{font:500 11px/1 var(--f-mono);color:var(--ink3)}
+.filter button.akt .n{color:var(--koralle2)}
+.ablinfo{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--ink3)}
+.neuhin{border:0;background:var(--aquaT);color:var(--aqua);font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px}
+.items{flex:1;min-height:0;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:2px}
+.item{display:grid;grid-template-columns:52px minmax(0,1fr);gap:12px;text-align:left;background:none;border:0;border-radius:11px;padding:8px;transition:background .12s}
+.item:hover{background:var(--deck2)}
+.item.akt{background:var(--deck3)}
+.thumb{position:relative;width:52px;height:92px;border-radius:7px;overflow:hidden;background:var(--deck3);display:grid;place-items:center;color:var(--ink3)}
+.item.akt .thumb{box-shadow:0 0 0 2px var(--aqua)}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
-.itxt{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1;padding-top:1px}
+.thumb .dauer{position:absolute;right:3px;bottom:3px;font:500 10px/1 var(--f-mono);padding:2px 4px;border-radius:4px;background:rgba(16,15,23,.82);color:var(--ink)}
+.itxt{display:flex;flex-direction:column;gap:4px;min-width:0;padding-top:1px}
 .izeile{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.izeile b{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.zeit{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums;flex:none}
-.iquote{color:var(--mut);font-size:12.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.imeta{display:flex;gap:4px;flex-wrap:wrap;margin-top:auto}
+.izeile b{font:600 14px/1.2 var(--f-disp);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.izeile .mono{font-size:11.5px;color:var(--ink3);flex:none}
+.iquote{font-size:12.5px;line-height:1.4;color:var(--ink2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.iquote.hook{color:var(--ink)}
+.ifuss{display:flex;align-items:center;gap:8px;margin-top:auto}
+.schritte{display:flex;gap:3px}
+.schritte i{width:14px;height:3px;border-radius:2px;background:var(--deck4)}
+.schritte i.an{background:var(--aqua)}
+.frist{font:500 11px/1 var(--f-mono);padding:3px 6px;border-radius:5px;background:var(--bernT);color:var(--bern)}
+.frist.knapp{background:var(--koralleT);color:var(--koralle2)}
+.frist.vorbei{background:var(--deck3);color:var(--ink3)}
 
-.buehne{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(70% 60% at 50% 40%,#1a1d27 0,#0e0f13 100%);border:1px solid var(--line);border-radius:20px;padding:18px;min-height:0;min-width:0}
-.buehne video{flex:1 1 0;min-height:0;height:0;width:auto;max-width:100%;aspect-ratio:9/16;border-radius:14px;background:#000;box-shadow:0 24px 70px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06)}
-.tasten{font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center}
-.tasten i{font-style:normal;margin-right:8px}
-kbd{font:11px/1 ui-monospace,SFMono-Regular,Consolas,monospace;padding:3px 6px;border-radius:5px;background:var(--p3);border:1px solid var(--line2);color:var(--mut)}
+/* Sichtgerät */
+.sicht{display:flex;flex-direction:column;min-height:0;min-width:0;background:radial-gradient(80% 70% at 50% 35%,#1c1929 0%,var(--nacht) 100%);border:1px solid var(--rule);border-radius:16px;padding:16px 18px 12px;gap:12px}
+.rahmen-box{flex:1;min-height:0;display:flex;justify-content:center}
+.rahmen{position:relative;height:100%;aspect-ratio:9/16;max-width:100%;border-radius:12px;overflow:hidden;background:#000;box-shadow:0 30px 80px -20px rgba(0,0,0,.7),0 0 0 1px var(--rule2);container-type:size}
+.rahmen video{width:100%;height:100%;object-fit:contain;display:block;cursor:pointer}
+.gross-play{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none;opacity:0;transition:opacity .2s}
+.gross-play span{width:64px;height:64px;border-radius:50%;background:rgba(16,15,23,.55);backdrop-filter:blur(6px);display:grid;place-items:center;color:#fff}
+.rahmen.pause .gross-play{opacity:1}
+.hookvor{position:absolute;left:6%;right:6%;top:17.2cqh;text-align:center;font:700 3.75cqh/4.69cqh Arial,"Helvetica Neue",sans-serif;color:#fff;text-transform:uppercase;pointer-events:none;
+  text-shadow:.31cqh 0 #000,-.31cqh 0 #000,0 .31cqh #000,0 -.31cqh #000,.22cqh .22cqh #000,-.22cqh .22cqh #000,.22cqh -.22cqh #000,-.22cqh -.22cqh #000}
+.vorlabel{position:absolute;left:10px;top:10px;font:600 10.5px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 7px;border-radius:5px;background:var(--koralle);color:var(--nacht)}
 
-.panel{overflow-y:auto;background:var(--p1);border:1px solid var(--line);border-radius:20px;padding:20px}
-.pkopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
-h2{font-size:20px;margin:0;letter-spacing:-.02em;font-weight:650}
-.meta{color:var(--mut);font-size:12.5px;margin-top:2px}
-.tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;padding-top:3px}
-blockquote{margin:16px 0 0;padding:12px 14px;background:var(--p2);border-radius:12px;font-size:14px;line-height:1.5;color:#d6d8de;border-left:2px solid var(--acc)}
-.chatzeile{margin-top:10px}
-.pill{font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:999px;background:var(--p3);color:var(--mut);white-space:nowrap}
-.pill.ok{background:rgba(61,220,151,.12);color:var(--ok)}
-.pill.gelb{background:rgba(255,181,71,.12);color:var(--warn)}
-.pill.acc{background:rgba(255,92,138,.14);color:var(--acc2)}
-.entscheid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+.transport{flex:none;display:grid;grid-template-columns:auto auto minmax(0,1fr) auto auto;align-items:center;gap:12px}
+.tbtn{width:34px;height:34px;border-radius:9px;border:1px solid var(--rule2);background:var(--deck2);display:grid;place-items:center;color:var(--ink);transition:background .12s}
+.tbtn:hover{background:var(--deck3)}
+.tbtn.play{background:var(--ink);color:var(--nacht);border-color:var(--ink)}
+.tbtn.play:hover{background:#fff}
+.tc{font:500 12.5px/1 var(--f-mono);color:var(--ink);min-width:44px}
+.tc.dim{color:var(--ink3)}
+.leiste{position:relative;height:38px;cursor:pointer;touch-action:none}
+.leiste .spur{position:absolute;left:0;right:0;top:20px;height:6px;border-radius:3px;background:var(--deck4)}
+.leiste .fort{position:absolute;left:0;top:20px;height:6px;border-radius:3px;background:var(--aqua);width:0}
+.leiste .kopf{position:absolute;top:16px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:var(--aqua);box-shadow:0 0 0 4px rgba(79,214,200,.2);left:0}
+.leiste .hookzone{position:absolute;top:4px;bottom:4px;left:0;border-radius:4px;background:repeating-linear-gradient(135deg,var(--koralleT) 0 5px,transparent 5px 9px);border:1px solid rgba(255,107,139,.35)}
+.leiste .hookzone span,.leiste .pointe span{position:absolute;top:-1px;font:600 9.5px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--koralle2);white-space:nowrap}
+.leiste .hookzone span{left:5px;top:3px}
+.leiste .pointe{position:absolute;top:2px;bottom:2px;width:2px;margin-left:-1px;background:var(--koralle);border-radius:1px}
+.leiste .pointe::after{content:"";position:absolute;left:50%;bottom:-3px;width:8px;height:8px;margin-left:-4px;transform:rotate(45deg);background:var(--koralle)}
+.leiste .pointe span{left:6px;top:1px}
+.leiste .geist{position:absolute;top:-20px;transform:translateX(-50%);font:500 11px/1 var(--f-mono);padding:4px 6px;border-radius:5px;background:var(--deck4);color:var(--ink);pointer-events:none;opacity:0;transition:opacity .12s}
+.leiste:hover .geist{opacity:1}
+.tasten{flex:none;display:flex;justify-content:center;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--ink3)}
+.tasten span{display:flex;align-items:center;gap:5px}
+kbd{font:500 10.5px/1 var(--f-mono);min-width:20px;text-align:center;padding:4px 5px;border-radius:5px;background:var(--deck3);border:1px solid var(--rule2);border-bottom-width:2px;color:var(--ink2)}
 
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--p3);border:1px solid var(--line2);border-radius:10px;padding:9px 14px;cursor:pointer;text-decoration:none;color:var(--txt);font-weight:500;transition:background .12s,border-color .12s,transform .06s;white-space:nowrap}
-.btn:hover{background:#262a35;border-color:rgba(255,255,255,.2);text-decoration:none}
-.btn:active{transform:translateY(1px)}
-.btn:disabled{opacity:.55;cursor:default}
-.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
-.btn.pri:hover{background:var(--acc2);border-color:var(--acc2)}
-.btn.ghost{background:transparent}
-.btn.gut{color:var(--ok)}
-.btn.weg{color:var(--bad)}
-.btn.gross{padding:13px;font-size:15px;font-weight:600;border-radius:12px}
-.btn.gut.gross{background:rgba(61,220,151,.09);border-color:rgba(61,220,151,.28)}
-.btn.gut.gross:hover{background:rgba(61,220,151,.17)}
-.btn.weg.gross{background:rgba(255,107,107,.07);border-color:rgba(255,107,107,.26)}
-.btn.weg.gross:hover{background:rgba(255,107,107,.14)}
-.btn.gross kbd{margin-left:4px;background:rgba(0,0,0,.28);border-color:transparent;color:inherit;opacity:.75}
-.btn.an{box-shadow:inset 0 0 0 1.5px currentColor}
-
-.seg{display:flex;padding:3px;background:var(--bg);border:1px solid var(--line);border-radius:11px;gap:2px}
-.seg button{flex:1;padding:8px;background:none;border:0;border-radius:8px;color:var(--mut);cursor:pointer;font-weight:500;transition:.12s}
-.seg button:hover{color:var(--txt)}
-.seg button.akt{background:var(--p3);color:var(--txt);box-shadow:0 1px 2px rgba(0,0,0,.4)}
-.lbl{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:20px 0 8px}
-.lbl span{text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)}
+/* Arbeitsbereich */
+.arbeit{display:flex;flex-direction:column;min-height:0;background:var(--deck);border:1px solid var(--rule);border-radius:16px;overflow:hidden}
+.akopf{flex:none;padding:18px 20px 0}
+.atitel{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+h2{font:600 22px/1.15 var(--f-disp);letter-spacing:-.02em;margin:0}
+.ameta{margin-top:5px;font-size:12.5px;color:var(--ink2);display:flex;flex-wrap:wrap;gap:4px 12px}
+.ameta b{color:var(--ink);font-weight:500}
+.pills{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;padding-top:2px}
+.pill{font-size:11.5px;font-weight:500;padding:3px 8px;border-radius:6px;background:var(--deck3);color:var(--ink2);white-space:nowrap}
+.pill.koralle{background:var(--koralleT);color:var(--koralle2)}
+.pill.gut{background:var(--gutT);color:var(--gut)}
+.pill.bern{background:var(--bernT);color:var(--bern)}
+.fristbox{margin-top:14px;padding:10px 12px;border-radius:10px;background:var(--bernT);color:var(--bern);font-size:12.5px;display:flex;flex-direction:column;gap:7px}
+.fristbox.knapp{background:var(--koralleT);color:var(--koralle2)}
+.fristbox.vorbei{background:var(--deck2);color:var(--ink3)}
+.fristbox div{display:flex;justify-content:space-between;gap:10px}
+.fristbox .bar{height:3px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+.fristbox .bar i{display:block;height:100%;background:currentColor}
+.moment{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--deck2)}
+.moment q{display:block;font-size:14px;line-height:1.5;color:var(--ink);quotes:"„" "“"}
+.chat{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.chat span{font:500 11px/1 var(--f-mono);padding:4px 7px;border-radius:5px;background:var(--deck4);color:var(--ink2)}
+.moment .chat:first-child{margin-top:0}
+.entscheid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.ent{display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;border-radius:11px;font:600 14.5px/1 var(--f-text);border:1px solid;transition:background .12s,transform .06s}
+.ent:active{transform:translateY(1px)}
+.ent.gut{color:var(--gut);background:var(--gutT);border-color:rgba(99,219,165,.28)}
+.ent.gut:hover{background:rgba(99,219,165,.2)}
+.ent.weg{color:var(--weg);background:var(--wegT);border-color:rgba(255,125,125,.24)}
+.ent.weg:hover{background:rgba(255,125,125,.17)}
+.ent.an{box-shadow:inset 0 0 0 1.5px currentColor}
+.ent kbd{background:rgba(0,0,0,.25);border-color:transparent;color:inherit;opacity:.8}
+.stepper{display:grid;grid-template-columns:repeat(3,1fr);margin:18px -20px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.stepper button{background:none;border:0;padding:12px 6px 11px;display:flex;align-items:center;justify-content:center;gap:7px;color:var(--ink2);font-weight:500;font-size:13.5px;position:relative;transition:color .15s}
+.stepper button+button{border-left:1px solid var(--rule)}
+.stepper button:hover{color:var(--ink)}
+.stepper button.akt{color:var(--ink)}
+.stepper button.akt::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--koralle)}
+.stepper .hak{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--deck4);display:grid;place-items:center;flex:none}
+.stepper .hak.an{background:var(--aqua);border-color:var(--aqua);color:var(--nacht)}
+.pane{flex:1;min-height:0;overflow-y:auto;padding:4px 20px 20px}
+.lbl{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:18px 0 8px;font:600 11px/1.2 var(--f-text);text-transform:uppercase;letter-spacing:.07em;color:var(--ink2)}
+.lbl span{text-transform:none;letter-spacing:0;font-weight:400;color:var(--ink3)}
 .feld{display:flex;gap:8px}
 .feld input{flex:1;min-width:0}
-input,select,textarea{background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;width:100%;transition:border-color .12s,box-shadow .12s}
-input::placeholder,textarea::placeholder{color:var(--dim)}
-input[type=checkbox]{width:16px;height:16px;padding:0;margin:0 8px 0 0;accent-color:var(--acc);vertical-align:-3px;box-shadow:none}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(255,92,138,.18)}
-textarea{font:12.5px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical;min-height:120px}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{background:var(--p2);border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13px;color:#d6d8de;transition:.12s;text-align:left}
-.chip:hover{border-color:var(--acc);color:#fff}
-.chip.an{background:rgba(255,92,138,.15);border-color:var(--acc);color:#fff}
-.chip.mini{padding:2px 8px;font-size:11.5px;cursor:default;color:var(--mut)}
-.chip.mini:hover{border-color:var(--line2);color:var(--mut)}
-.checks{display:flex;flex-direction:column;gap:2px}
-.check{display:flex;gap:10px;align-items:center;padding:7px 10px;border-radius:9px;cursor:pointer;font-size:13.5px}
-.check:hover{background:var(--p2)}
-.check input{width:16px;height:16px;accent-color:var(--acc);margin:0;flex:none;padding:0}
-.check input:checked+span{color:var(--dim);text-decoration:line-through}
-.capkopf{display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px}
-.rot{color:var(--bad)}
-.leise{color:var(--dim);font-size:12.5px;margin-top:8px}
+input,select,textarea{background:var(--nacht);border:1px solid var(--rule2);border-radius:10px;padding:10px 12px;width:100%;transition:border-color .15s,box-shadow .15s}
+input::placeholder,textarea::placeholder{color:var(--ink3)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--koralle);box-shadow:0 0 0 3px var(--koralleT)}
+input[type=checkbox]{width:16px;height:16px;padding:0;margin:0;accent-color:var(--aqua);flex:none;box-shadow:none}
+textarea{font:12.5px/1.6 var(--f-mono);resize:vertical;min-height:130px}
+.zaehler{font:500 11.5px/1 var(--f-mono);color:var(--ink3)}
+.zaehler.warn{color:var(--bern)}
+.vorschlaege{display:flex;flex-direction:column;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.vorschlaege button{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;background:none;border:0;padding:10px 12px;font-size:13.5px;color:var(--ink);transition:background .12s}
+.vorschlaege button+button{border-top:1px solid var(--rule)}
+.vorschlaege button:hover{background:var(--deck2)}
+.vorschlaege button.an{background:var(--koralleT)}
+.vorschlaege button i{font-style:normal;font-size:11.5px;color:var(--ink3);flex:none}
+.vorschlaege button.an i{color:var(--koralle2)}
+.typen{display:flex;flex-wrap:wrap;gap:6px}
+.typ{border:1px solid var(--rule2);background:none;border-radius:8px;padding:6px 11px;font-size:13px;color:var(--ink2);transition:.12s}
+.typ:hover{color:var(--ink);border-color:var(--rule3)}
+.typ.an{background:var(--aquaT);border-color:rgba(79,214,200,.45);color:var(--aqua)}
+.checks{display:flex;flex-direction:column;border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.check{display:flex;gap:11px;align-items:center;padding:10px 12px;font-size:13.5px;cursor:pointer;transition:background .12s}
+.check+.check{border-top:1px solid var(--rule)}
+.check:hover{background:var(--deck2)}
+.check input:checked+span{color:var(--ink3);text-decoration:line-through}
+.leise{color:var(--ink3);font-size:12.5px;margin-top:10px}
 
-.seite{max-width:1100px;margin:0 auto}
-.box{background:var(--p1);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:14px}
-.box>b:first-child{display:block;font-size:15px;font-weight:600;margin-bottom:6px}
+/* Knöpfe */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--deck3);border:1px solid var(--rule2);border-radius:10px;padding:9px 14px;font-weight:500;text-decoration:none;color:var(--ink);white-space:nowrap;transition:background .12s,border-color .12s,transform .06s}
+.btn:hover{background:var(--deck4);border-color:var(--rule3);text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.5;cursor:default;transform:none}
+.btn.pri{background:var(--koralle);border-color:var(--koralle);color:#1a0e14;font-weight:600}
+.btn.pri:hover{background:var(--koralle2);border-color:var(--koralle2)}
+.btn.ghost{background:none}
+.btn.weg{color:var(--weg)}
+.btn.gut{color:var(--gut)}
+
+/* Seiten */
+.seite{max-width:1080px;margin:0 auto;padding-bottom:24px}
+.skopf{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin:6px 0 18px;flex-wrap:wrap}
+h1{font:600 26px/1.15 var(--f-disp);letter-spacing:-.02em;margin:0;text-wrap:balance}
+.skopf p{margin:4px 0 0;color:var(--ink2);max-width:62ch}
+.box{background:var(--deck);border:1px solid var(--rule);border-radius:16px;padding:18px 20px;margin-bottom:14px;min-width:0}
+.box>b:first-child{display:block;font:600 16px/1.3 var(--f-disp);margin-bottom:6px}
 .zeile{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
 .zeile input{flex:1;min-width:180px}
-.klein{color:var(--mut);font-size:12.5px}
-.tag{font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--p3);color:var(--mut)}
-.tag.gut{background:rgba(61,220,151,.12);color:var(--ok)}
-.hinweis{background:rgba(255,181,71,.07);border:1px solid rgba(255,181,71,.22);color:#f1dcb6;border-radius:12px;padding:10px 14px;font-size:13px;margin:12px 0}
-.warn{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);color:#ffd0d0;border-radius:12px;padding:10px 14px;font-size:13px;margin:12px 0}
-.band .hinweis,.band .warn{margin:12px 0 0}
-.update{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(255,92,138,.08);border:1px solid rgba(255,92,138,.25);border-radius:12px;padding:8px 8px 8px 14px;margin-top:12px;font-size:13px}
-.updlink{display:block;text-align:right;font-size:12px;color:var(--dim);margin-top:6px}
+.zeile select{width:auto}
+.klein{color:var(--ink2);font-size:12.5px}
+.tag{font-size:11.5px;font-weight:500;padding:2px 7px;border-radius:6px;background:var(--deck3);color:var(--ink2)}
+.tag.gut{background:var(--gutT);color:var(--gut)}
+.hinweis{background:var(--bernT);border:1px solid rgba(255,191,94,.22);color:#f6dfb8;border-radius:12px;padding:11px 14px;font-size:13px;margin:12px 0}
+.warn{background:var(--wegT);border:1px solid rgba(255,125,125,.24);color:#ffd6d6;border-radius:12px;padding:11px 14px;font-size:13px;margin:12px 0}
+.update{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--aquaT);border:1px solid rgba(79,214,200,.3);border-radius:12px;padding:8px 8px 8px 14px;font-size:13px}
+.update b{color:var(--aqua)}
+.update .btn.pri{background:var(--aqua);border-color:var(--aqua);color:var(--nacht)}
 table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
-th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
-td.z,th.z{text-align:right}
+th,td{padding:10px 12px;border-bottom:1px solid var(--rule);text-align:left;vertical-align:top}
+th{color:var(--ink3);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.07em}
+td.z,th.z{text-align:right;font-family:var(--f-mono);font-size:12.5px}
+th.z{font-family:var(--f-text);font-size:11px}
 tr:last-child td{border-bottom:0}
 tr:hover td{background:rgba(255,255,255,.015)}
-a{color:var(--acc2);text-decoration:none}
+a{color:var(--aqua);text-decoration:none}
 a:hover{text-decoration:underline}
-.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
-.stat div{background:var(--p2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;color:var(--mut);font-size:12.5px}
-.stat b{display:block;font-size:22px;font-weight:650;color:var(--txt);letter-spacing:-.02em;margin-bottom:2px}
-pre{background:var(--p1);border:1px solid var(--line);border-radius:16px;padding:16px 18px;font:12.5px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;overflow:auto;white-space:pre-wrap;color:#c9ccd4;margin:0}
-code{font-family:ui-monospace,Consolas,monospace;background:var(--p3);padding:1px 5px;border-radius:5px;font-size:.92em}
+.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.stat div{background:var(--deck2);border-radius:12px;padding:14px 16px;color:var(--ink2);font-size:12.5px;min-width:0}
+.stat b{display:block;font:600 24px/1.2 var(--f-disp);color:var(--ink);letter-spacing:-.02em;margin-bottom:2px;overflow-wrap:anywhere}
+.log{background:var(--deck);border:1px solid var(--rule);border-radius:16px;padding:16px 18px;font:12.5px/1.75 var(--f-mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink2);margin:0}
+.log .t{color:var(--ink3)}
+.log .k{color:var(--aqua)}
+.log .a{color:var(--koralle2);font-weight:500}
+.log .f{color:var(--gut)}
+.log .e{color:var(--weg)}
+code{font-family:var(--f-mono);background:var(--deck3);padding:1px 5px;border-radius:5px;font-size:.9em}
 ul{margin:8px 0;padding-left:20px}
 li{margin:4px 0}
-.laengen{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
-.leer{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:100px 20px;color:var(--mut)}
-.leer svg{color:var(--dim);margin-bottom:6px}
-.leer b{color:var(--txt);font-size:16px;font-weight:600}
-.leer span{max-width:400px;font-size:13.5px}
-#neuBtn{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:30}
-#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:13.5px;transition:.2s;pointer-events:none;z-index:40}
+.laengen{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+
+.leer{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:40px 24px;color:var(--ink2);height:100%}
+.leer .ikon{width:56px;height:56px;border-radius:14px;background:var(--deck2);display:grid;place-items:center;color:var(--ink3);margin-bottom:4px}
+.leer b{font:600 17px/1.3 var(--f-disp);color:var(--ink)}
+.leer span{max-width:340px;font-size:13.5px}
+
+#toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom,0px));transform:translate(-50%,14px);opacity:0;display:flex;align-items:center;gap:8px;background:var(--ink);color:var(--nacht);padding:10px 16px;border-radius:10px;font-weight:600;font-size:13.5px;transition:opacity .2s,transform .2s;pointer-events:none;z-index:40;box-shadow:0 12px 30px rgba(0,0,0,.4)}
 #toast.an{opacity:1;transform:translate(-50%,0)}
 ::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-thumb{background:var(--p3);border-radius:10px;border:3px solid var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--deck4);border-radius:10px;border:3px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-track{background:transparent}
-@media(max-width:1200px){.review{grid-template-columns:240px minmax(0,1fr) 360px}}
-@media(max-width:980px){.review{grid-template-columns:1fr;height:auto;min-height:0}.liste{flex-direction:row;overflow-x:auto;padding:0 0 6px}.listekopf{display:none}.item{flex:none;width:250px}.buehne video{flex:none;height:min(70vh,640px)}.tasten{display:none}}
-@media(max-width:640px){body{height:auto;min-height:100vh;overflow:visible}main{overflow:visible}.top{position:sticky;top:0;flex-wrap:wrap;height:auto;padding:10px 14px 0;gap:8px}.top #tabs{order:3;flex-basis:100%;height:44px}#stat{margin-left:auto}main,.band{padding-left:14px;padding-right:14px}.item{width:220px}.panel{padding:16px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media(max-width:1240px){.platz{grid-template-columns:260px minmax(0,1fr) 360px}}
+@media(max-width:1000px){
+  body{overflow:auto;height:auto;min-height:100%}
+  main{overflow:visible}
+  .platz{grid-template-columns:1fr;height:auto}
+  .ablage{max-height:none}
+  .items{flex-direction:row;overflow-x:auto;padding:8px}
+  .item{flex:none;width:260px}
+  .sicht{padding:12px}
+  .rahmen-box{flex:none;height:min(72vh,640px)}
+  .tasten{display:none}
+  .pane{overflow:visible}
+}
+@media(max-width:640px){
+  .top{flex-wrap:wrap;height:auto;padding-top:10px;gap:10px}
+  #tabs{order:3;flex-basis:100%;height:42px}
+  #stat{margin-left:auto}
+  .transport{grid-template-columns:auto minmax(0,1fr) auto;gap:10px}
+  .transport .tc{display:none}
+  .akopf,.pane{padding-left:16px;padding-right:16px}
+  .stepper{margin-left:-16px;margin-right:-16px}
+}
 </style></head><body>
-<header class="top"><div class="brand"><span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l10-6.5z"/></svg></span>clip-watcher</div><nav id="tabs"></nav><div id="stat"></div></header>
+<header class="top"><div class="brand"><span class="logo"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></span>clip-watcher</div><nav id="tabs"></nav><button id="stat" onclick="geheZu('kanaele')" title="Watcher und Kanäle"></button></header>
 <div id="banner" class="band"></div><div id="upd" class="band"></div>
-<main id="main"></main><div id="neuBtn"></div><div id="toast"></div>
+<main id="main"></main><div id="toast" role="status" aria-live="polite"></div>
 <script>
-let tab='neu',clips=[],cfg=null,caps={},sig='',hookE={},hv={},ups={},kontoSt={},sel=null,pt={},check={},hookV={},autoplay=false,busy={};
+let tab='clips',filter='neu',clips=[],cfg=null,st={},kontoSt={},sel=null,sig='',neuWartet=false,autoplay=false;
+let pane={},caps={},hv={},hookE={},busy={},ups={},check={},hookV={};
+let stumm=false;try{stumm=localStorage.getItem('cw_stumm')=='1'}catch(e){}
 const $=s=>document.querySelector(s);
 const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
-const sv=(d,w)=>'<svg viewBox="0 0 24 24" width="'+(w||18)+'" height="'+(w||18)+'" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
-const P={check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',down:'<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/>',
- spark:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
- film:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',play:'<path d="M8 5.5v13l10-6.5z" fill="currentColor"/>'};
-const KLIPS=['neu','gut','weg'];
-function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function tippt(){const a=document.activeElement&&document.activeElement.tagName;return a=='INPUT'||a=='TEXTAREA'||a=='SELECT'}
-function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('an');clearTimeout(window.__tt);window.__tt=setTimeout(()=>e.classList.remove('an'),1800)}
-function gesagt(c){const g=(c.gesagt||'').trim();return g.startsWith('(')?'':g}
-function liste(){return clips.filter(c=>c.status==tab)}
-function aktuell(){return clips.find(c=>c.id==sel)}
+const sv=(d,w,f)=>'<svg viewBox="0 0 24 24" width="'+(w||18)+'" height="'+(w||18)+'" fill="'+(f?'currentColor':'none')+'" stroke="'+(f?'none':'currentColor')+'" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+const P={play:'<path d="M8 5.2v13.6L19 12z"/>',pause:'<rect x="6.5" y="5" width="3.8" height="14" rx="1"/><rect x="13.7" y="5" width="3.8" height="14" rx="1"/>',
+ laut:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/>',stumm:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+ check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+ down:'<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/>',film:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
+ radar:'<circle cx="12" cy="12" r="2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 19a10 10 0 0 1 0-14M19 5a10 10 0 0 1 0 14"/>'};
+const TYPEN=['Frage','Zahl','Schock','Reaktion','Zitat'];
+const CHECKS=['Kein Spoiler, keine Zwischensequenz allein','Kein Leak, keine laute Musik im Hintergrund','Hook und Untertitel sind drin','Bei Kampagne: „Werbung“ sichtbar, Pflichtangaben drin'];
 
-function tabs(){const n=k=>clips.filter(c=>c.status==k).length;
- const t=[['neu','Neu',n('neu')],['gut','Gut',n('gut')],['weg','Verworfen',n('weg')],null,['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
- $('#tabs').innerHTML=t.map(x=>x?`<button class="${tab==x[0]?'akt':''}" onclick="geheZu('${x[0]}')">${x[1]}${x[2]!=null?`<span class="zahl">${x[2]}</span>`:''}</button>`:'<span class="trenn"></span>').join('')}
-function geheZu(k){tab=k;sel=null;render()}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function tippt(){const a=document.activeElement&&document.activeElement.tagName;return a=='INPUT'||a=='TEXTAREA'||a=='SELECT'}
+function toast(t){const e=$('#toast');e.innerHTML=sv(P.check,16)+esc(t);e.classList.add('an');clearTimeout(window.__tt);window.__tt=setTimeout(()=>e.classList.remove('an'),1900)}
+function gesagt(c){const g=(c.gesagt||'').trim();return g.startsWith('(')?'':g}
+function chatWoerter(c){return (c.chat&&c.chat!='-')?c.chat.split(',').map(w=>w.trim()).filter(Boolean).slice(0,5):[]}
+function liste(){return clips.filter(c=>c.status==filter)}
+function aktuell(){return clips.find(c=>c.id==sel)}
+function uhr(c){return (c.zeit||'').split(' ')[1]||c.zeit||''}
+function fmt(t){t=Math.max(0,t||0);return Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0')+'.'+(Math.floor(t*10)%10)}
+function kampagne(c){return (c.rechte||'').startsWith('kampagne')}
+function kopiert(id){try{return localStorage.getItem('cw_kop_'+id)=='1'}catch(e){return false}}
+function merkeKopiert(id){try{localStorage.setItem('cw_kop_'+id,'1')}catch(e){}}
+function schritte(c){return {hook:!!c.hook,caption:kopiert(c.id),online:!!c.link}}
+function fristEnde(c){return kampagne(c)&&c.frist_min&&c.zeit_ts&&!c.link&&c.status!='weg'?c.zeit_ts+c.frist_min*60000:null}
+function fristText(ende){const r=ende-Date.now();if(r<=0)return['Frist vorbei','vorbei'];const m=Math.ceil(r/60000);return[m+' Min',m<=10?'knapp':'']}
+function umbruch(t,w){const out=[];let z='';for(let wort of t.split(' ').filter(Boolean)){while(wort.length>w){if(z){out.push(z);z=''}out.push(wort.slice(0,w));wort=wort.slice(w)}if(!z)z=wort;else if((z+' '+wort).length<=w)z+=' '+wort;else{out.push(z);z=wort}}if(z)out.push(z);return out}
+
+/* Navigation */
+function tabs(){const n=clips.filter(c=>c.status=='neu').length;
+ const t=[['clips','Clips',n],['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
+ $('#tabs').innerHTML=t.map(x=>`<button class="${tab==x[0]?'akt':''}" onclick="geheZu('${x[0]}')">${x[1]}${x[2]?`<span class="zahl">${x[2]}</span>`:''}</button>`).join('')}
+function geheZu(k){tab=k;render();$('#main').scrollTop=0}
+function setzeFilter(f){filter=f;sel=null;render()}
 
 function render(){tabs();const m=$('#main');
- if(KLIPS.includes(tab)){m.innerHTML=reviewHtml(liste());nachRender()}
- else if(tab=='kanaele'&&cfg){m.innerHTML='<div class="seite">'+kanaeleHtml()+'</div>'}
- else if(tab=='trends'){api('/api/trend').then(r=>{m.innerHTML='<div class="seite">'+trendHtml(r)+'</div>'})}
- else if(tab=='tracker'){api('/api/tracker').then(r=>{m.innerHTML='<div class="seite">'+trackerHtml(r)+'</div>'})}
- else if(tab=='log'){api('/api/log').then(r=>{m.innerHTML='<div class="seite"><pre>'+esc(r.log||'(noch nichts)')+'</pre></div>';m.scrollTop=m.scrollHeight})}}
-function nachRender(){const v=$('#vid');if(v&&autoplay){v.play().catch(()=>{})}autoplay=false}
-function teil(){if(!KLIPS.includes(tab))return;const c=aktuell();const p=$('#panel'),l=$('#liste');if(!c||!p){render();return}
- const a=document.activeElement,id=a&&p.contains(a)&&a.id,wert=id&&a.value,pos=id&&a.selectionStart;
- p.innerHTML=panel(c);if(l)l.innerHTML=listeInnen(liste());
- if(id){const n=document.getElementById(id);if(n){n.focus();if(wert!=null)n.value=wert;try{n.setSelectionRange(pos,pos)}catch(e){}}}}
+ if(tab=='clips'){m.innerHTML=platzHtml();bindPlayer();tick()}
+ else if(tab=='kanaele'&&cfg){m.innerHTML=seite('Kanäle','Welche Twitch-Kanäle der Watcher überwacht und wie lang die Clips werden.',kanaeleHtml())}
+ else if(tab=='trends'){api('/api/trend').then(r=>{if(tab=='trends')m.innerHTML=seite('Trends','GTA-6-Shorts der letzten 72 Stunden aus Deutschland, sortiert nach Aufrufen pro Stunde. Zum Lernen von Mustern, nicht zum Kopieren.',trendHtml(r))})}
+ else if(tab=='tracker'){api('/api/tracker').then(r=>{if(tab=='tracker')m.innerHTML=seite('Tracker','Zahlen deiner hochgeladenen Shorts. Trag beim Clip unter „Posten“ den YouTube-Link ein.',trackerHtml(r))})}
+ else if(tab=='log'){api('/api/log').then(r=>{if(tab!='log')return;m.innerHTML=seite('Protokoll','Was der Watcher gerade tut. Die neuesten Zeilen stehen unten.','<pre class="log">'+logHtml(r.log)+'</pre>');m.scrollTop=m.scrollHeight})}}
+function seite(t,p,inhalt){return `<div class="seite"><div class="skopf"><div><h1>${t}</h1><p>${p}</p></div></div>${inhalt}</div>`}
+function logHtml(txt){if(!txt)return 'Noch nichts protokolliert.';return txt.split('\\n').map(z=>{let h='';
+ if(z.startsWith('[')&&z.indexOf(']')==9){h+=`<span class="t">${esc(z.slice(0,10))}</span>`;z=z.slice(10)}
+ const a=z.indexOf('['),b=z.indexOf(']');if(a>-1&&b>a&&a<3){h+=esc(z.slice(0,a))+`<span class="k">${esc(z.slice(a,b+1))}</span>`;z=z.slice(b+1)}
+ let k='';if(z.includes('Ausschlag!'))k='a';else if(z.includes('FERTIG'))k='f';else if(/Fehler|fehlgeschlagen|abgestürzt|fehlt|ÜBERSPRUNGEN/.test(z))k='e';
+ return h+(k?`<span class="${k}">${esc(z)}</span>`:esc(z))}).join('\\n')}
 
-function reviewHtml(l){
- if(!l.length)return `<div class="leer">${sv(P.film,40)}<b>${tab=='neu'?'Noch keine neuen Clips':tab=='gut'?'Noch keine guten Clips':'Nichts verworfen'}</b><span>${tab=='neu'?'Sobald ein Kanal live ist und der Chat ausschlägt, landen die Clips hier.':'Sortiere Clips im Tab „Neu“ mit G (gut) oder W (weg).'}</span></div>`;
- if(!l.find(c=>c.id==sel))sel=l[0].id;const c=aktuell();
- return `<div class="review"><aside class="liste" id="liste">${listeInnen(l)}</aside>
- <section class="buehne"><video id="vid" src="${c.video}${hookV[c.id]?'?v='+hookV[c.id]:''}" controls playsinline loop preload="metadata"></video>
- <div class="tasten"><kbd>G</kbd><i>gut</i><kbd>W</kbd><i>weg</i><kbd>↑</kbd><kbd>↓</kbd><i>Clip wechseln</i><kbd>Leertaste</kbd><i>Play/Pause</i></div></section>
- <section class="panel" id="panel">${panel(c)}</section></div>`}
-function listeInnen(l){return `<div class="listekopf">${l.length} ${l.length==1?'Clip':'Clips'}</div>`+l.map(item).join('')}
-function kurzZeit(z){return (z||'').split(' ')[1]||z||''}
-function item(c){const txt=c.hook||gesagt(c)||c.ausloeser||'–';
+/* Schnittplatz */
+function platzHtml(){const l=liste();if(!l.find(c=>c.id==sel))sel=l[0]?l[0].id:null;const c=aktuell();
+ const n=k=>clips.filter(x=>x.status==k).length;
+ return `<div class="platz"><aside class="ablage"><div class="ablkopf">
+ <div class="filter">${[['neu','Neu'],['gut','Gut'],['weg','Verworfen']].map(([k,t])=>`<button class="${filter==k?'akt':''}" onclick="setzeFilter('${k}')">${t}<span class="n">${n(k)}</span></button>`).join('')}</div>
+ <div class="ablinfo"><span>${cfg&&cfg.clip_laenge_s?cfg.clip_laenge_s:18} s pro Clip · neueste oben</span>${neuWartet?'<button class="neuhin" onclick="neuLaden()">Neue Clips</button>':''}</div></div>
+ <div class="items" id="items">${itemsHtml(l)}</div></aside>
+ ${c?sichtHtml(c)+`<section class="arbeit" id="arbeit">${arbeitHtml(c)}</section>`:`<section class="sicht" style="grid-column:span 2">${leerHtml()}</section>`}</div>`}
+function itemsHtml(l){return l.length?l.map(item).join(''):`<div class="leise" style="padding:14px 10px">${filter=='neu'?'Keine neuen Clips.':'Noch leer.'}</div>`}
+function item(c){const s=schritte(c),txt=c.hook||gesagt(c)||(c.score?'Chat '+c.score+' statt '+c.basis:c.ausloeser)||'–',ende=fristEnde(c);
  return `<button class="item ${c.id==sel?'akt':''}" onclick="waehle('${c.id}')">
- <span class="thumb">${c.vorschau?`<img src="${c.vorschau}" loading="lazy" alt="">`:sv(P.play,18)}</span>
- <span class="itxt"><span class="izeile"><b>${esc(c.quelle)}</b><span class="zeit">${esc(kurzZeit(c.zeit))}</span></span>
- <span class="iquote">${esc(txt)}</span>
- <span class="imeta">${c.hook?'<span class="pill acc">Hook</span>':''}${c.ut=='laeuft'?'<span class="pill gelb">Untertitel …</span>':''}${c.link?'<span class="pill ok">online</span>':''}</span></span></button>`}
+ <span class="thumb">${c.vorschau?`<img src="${c.vorschau}" loading="lazy" alt="">`:sv(P.play,18,1)}${c.laenge?`<span class="dauer">0:${String(Math.round(c.laenge)).padStart(2,'0')}</span>`:''}</span>
+ <span class="itxt"><span class="izeile"><b>${esc(c.quelle)}</b><span class="mono">${esc(uhr(c))}</span></span>
+ <span class="iquote ${c.hook?'hook':''}">${esc(txt)}</span>
+ <span class="ifuss"><span class="schritte" title="Hook · Caption · Online"><i class="${s.hook?'an':''}"></i><i class="${s.caption?'an':''}"></i><i class="${s.online?'an':''}"></i></span>${ende?`<span class="frist" data-ende="${ende}"></span>`:''}</span></span></button>`}
+function leerHtml(){const live=st.aufnahme||[];
+ const [t,u]=filter!='neu'?[filter=='gut'?'Noch keine guten Clips':'Nichts verworfen','Sortiere Clips unter „Neu“ mit G für gut oder W für weg.']:
+  !st.laeuft?['Der Watcher ist aus','Starte ihn unter „Kanäle“, dann wartet er auf deine Livestreams.']:
+  live.length?[esc(live.join(', '))+' ist live','Die Aufnahme läuft. Sobald der Chat ausschlägt, erscheint hier der erste Clip.']:['Noch keine neuen Clips','Der Watcher wartet. Wenn ein überwachter Kanal live geht und der Chat ausschlägt, landet der Clip hier.'];
+ return `<div class="leer"><div class="ikon">${sv(live.length&&filter=='neu'?P.radar:P.film,26)}</div><b>${t}</b><span>${u}</span>${!st.laeuft&&filter=='neu'?`<button class="btn" onclick="geheZu('kanaele')">Zu den Kanälen</button>`:''}</div>`}
 
-function panel(c){const p=pt[c.id]||'hook',kamp=(c.rechte||'').startsWith('kampagne');
- return `<div class="pkopf"><div><h2>${esc(c.quelle)}</h2><div class="meta">${esc(c.zeit)}${c.ausloeser?' · '+esc(c.ausloeser):''}</div></div>
- <div class="tags">${kamp?'<span class="pill acc">Kampagne</span>':`<span class="pill">${esc((c.rechte||'').split(' ')[0])}</span>`}${c.ut=='laeuft'?'<span class="pill gelb">Untertitel folgen</span>':c.ut=='fertig'?'<span class="pill ok">Untertitel</span>':''}</div></div>
- ${gesagt(c)?`<blockquote>„${esc(gesagt(c))}“</blockquote>`:''}
- ${c.chat&&c.chat!='-'?`<div class="chips chatzeile">${c.chat.split(',').map(w=>`<span class="chip mini">${esc(w.trim())}</span>`).join('')}</div>`:''}
- <div class="entscheid"><button class="btn gut gross ${c.status=='gut'?'an':''}" onclick="setze('${c.id}','gut')">${sv(P.check)}Gut<kbd>G</kbd></button><button class="btn weg gross ${c.status=='weg'?'an':''}" onclick="setze('${c.id}','weg')">${sv(P.x)}Weg<kbd>W</kbd></button></div>
- <div class="seg">${[['hook','Hook'],['caption','Caption'],['post','Posten']].map(([k,n])=>`<button class="${p==k?'akt':''}" onclick="pane('${c.id}','${k}')">${n}</button>`).join('')}</div>
- <div class="pane">${p=='hook'?paneHook(c):p=='caption'?paneCaption(c):panePost(c)}</div>`}
-function pane(id,k){pt[id]=k;teil()}
+function sichtHtml(c){const src=c.video+(hookV[c.id]?'?v='+hookV[c.id]:'');
+ return `<section class="sicht"><div class="rahmen-box"><div class="rahmen pause" id="rahmen">
+ <video id="vid" src="${src}" playsinline loop preload="auto"></video>
+ <div class="gross-play"><span>${sv(P.play,26,1)}</span></div><div id="hookvor"></div></div></div>
+ <div class="transport"><button class="tbtn play" id="pbtn" aria-label="Abspielen">${sv(P.play,16,1)}</button><span class="tc mono" id="tcA">0:00.0</span>
+ <div class="leiste" id="leiste" aria-label="Zeitleiste"><div class="hookzone" id="hz" title="Hook-Fenster: die ersten 2,5 Sekunden"><span>Hook</span></div><div class="spur"></div><div class="fort" id="fort"></div>
+ ${c.pointe!=null?'<div class="pointe" id="pm" title="Pointe: hier hat der Chat ausgeschlagen"><span>Pointe</span></div>':''}<div class="kopf" id="kopf"></div><div class="geist" id="geist"></div></div>
+ <span class="tc dim mono" id="tcD">–</span><button class="tbtn" id="mbtn" aria-label="Ton an oder aus">${sv(stumm?P.stumm:P.laut,17)}</button></div>
+ <div class="tasten"><span><kbd>Leertaste</kbd>Play</span><span><kbd>←</kbd><kbd>→</kbd>1 s</span><span><kbd>↑</kbd><kbd>↓</kbd>Clip</span><span><kbd>G</kbd>Gut</span><span><kbd>W</kbd>Weg</span><span><kbd>M</kbd>Ton</span></div></section>`}
 
-const TYPEN=['Frage','Zahl','Schock','Reaktion','Zitat'];
+let rafToken=0;
+function bindPlayer(){const v=$('#vid');if(!v)return;const rahmen=$('#rahmen'),fort=$('#fort'),kopf=$('#kopf'),tcA=$('#tcA'),pb=$('#pbtn'),le=$('#leiste'),ge=$('#geist');
+ v.muted=stumm;
+ const upd=()=>{const d=v.duration||0,p=d?v.currentTime/d*100:0;fort.style.width=p+'%';kopf.style.left=p+'%';tcA.textContent=fmt(v.currentTime);
+  rahmen.classList.toggle('pause',v.paused);pb.innerHTML=sv(v.paused?P.play:P.pause,16,1);pb.setAttribute('aria-label',v.paused?'Abspielen':'Pause')};
+ const loop=tok=>{if(tok!==rafToken)return;upd();if(!v.paused)requestAnimationFrame(()=>loop(tok))};
+ v.addEventListener('loadedmetadata',()=>{const d=v.duration||1,c=aktuell();$('#tcD').textContent=fmt(d);$('#hz').style.width=Math.min(100,2.5/d*100)+'%';
+  const pm=$('#pm');if(pm&&c&&c.pointe!=null)pm.style.left=Math.min(100,c.pointe/d*100)+'%';upd()});
+ v.addEventListener('play',()=>{rafToken++;loop(rafToken)});v.addEventListener('pause',upd);v.addEventListener('seeked',upd);
+ v.onclick=()=>v.paused?v.play():v.pause();pb.onclick=v.onclick;
+ $('#mbtn').onclick=stummUmschalten;
+ const zeit=e=>{const r=le.getBoundingClientRect();return Math.min(1,Math.max(0,(e.clientX-r.left)/r.width))*(v.duration||0)};
+ let zieht=false;
+ le.onpointerdown=e=>{zieht=true;le.setPointerCapture(e.pointerId);v.currentTime=zeit(e);upd()};
+ le.onpointermove=e=>{const t=zeit(e),r=le.getBoundingClientRect();ge.style.left=(e.clientX-r.left)+'px';ge.textContent=fmt(t);if(zieht){v.currentTime=t;upd()}};
+ le.onpointerup=()=>{zieht=false};
+ hookVorschau();
+ if(autoplay){v.play().catch(()=>{})}autoplay=false}
+function stummUmschalten(){stumm=!stumm;try{localStorage.setItem('cw_stumm',stumm?'1':'0')}catch(e){}const v=$('#vid');if(v)v.muted=stumm;const b=$('#mbtn');if(b)b.innerHTML=sv(stumm?P.stumm:P.laut,17);toast(stumm?'Ton aus':'Ton an')}
+function hookVorschau(){const box=$('#hookvor'),c=aktuell();if(!box||!c)return;const e=hookE[c.id],t=(e||'').trim();
+ if(e==null||!t||t==(c.hook||'').trim()){box.innerHTML='';return}
+ box.innerHTML='<span class="vorlabel">Vorschau</span><div class="hookvor">'+umbruch(t.toUpperCase(),20).slice(0,2).map(esc).join('<br>')+'</div>'}
+
+/* Arbeitsbereich */
+function arbeitHtml(c){const p=pane[c.id]||'hook',s=schritte(c),g=gesagt(c),w=chatWoerter(c),ende=fristEnde(c);
+ const rechte=(c.rechte||'').split(' ')[0];
+ return `<div class="akopf"><div class="atitel"><div><h2>${esc(c.quelle)}</h2><div class="ameta"><span>${esc(c.zeit)}</span>${c.score?`<span>Chat <b>${c.score}</b> statt ${c.basis}</span>`:''}${c.laenge?`<span>${Math.round(c.laenge)} s</span>`:''}</div></div>
+ <div class="pills">${kampagne(c)?'<span class="pill koralle">Kampagne</span>':(rechte?`<span class="pill">${esc(rechte)}</span>`:'')}${c.ut=='laeuft'?'<span class="pill bern">Untertitel folgen</span>':c.ut=='fertig'?'<span class="pill gut">Untertitel</span>':''}</div></div>
+ ${ende?`<div class="fristbox" data-ende="${ende}" data-dauer="${c.frist_min*60000}"><div><span data-text></span><span class="mono" data-bis></span></div><div class="bar"><i></i></div></div>`:''}
+ ${g||w.length?`<div class="moment">${g?`<q>${esc(g)}</q>`:''}${w.length?`<div class="chat">${w.map(x=>`<span>${esc(x)}</span>`).join('')}</div>`:''}</div>`:''}
+ <div class="entscheid"><button class="ent gut ${c.status=='gut'?'an':''}" onclick="setze('${c.id}','gut')">${sv(P.check,17)}Gut<kbd>G</kbd></button><button class="ent weg ${c.status=='weg'?'an':''}" onclick="setze('${c.id}','weg')">${sv(P.x,17)}Weg<kbd>W</kbd></button></div>
+ ${c.status!='neu'?`<div class="leise" style="text-align:center">Als ${c.status=='gut'?'gut':'verworfen'} markiert · <a href="#" onclick="setze('${c.id}','neu');return false">zurück zu Neu</a></div>`:''}
+ <div class="stepper">${[['hook','Hook',s.hook],['caption','Caption',s.caption],['post','Posten',s.online]].map(([k,t,ok])=>`<button class="${p==k?'akt':''}" onclick="zeigePane('${c.id}','${k}')"><span class="hak ${ok?'an':''}">${ok?sv(P.check,11):''}</span>${t}</button>`).join('')}</div></div>
+ <div class="pane" id="pane">${p=='hook'?paneHook(c):p=='caption'?paneCaption(c):panePost(c)}</div>`}
+function zeigePane(id,k){pane[id]=k;teil()}
+function teil(){if(tab!='clips')return;const c=aktuell(),a=$('#arbeit'),it=$('#items');if(!c||!a){render();return}
+ const ae=document.activeElement,fid=ae&&a.contains(ae)&&ae.id,pos=fid&&ae.selectionStart,sc=($('#pane')||{}).scrollTop||0;
+ a.innerHTML=arbeitHtml(c);if(it)it.innerHTML=itemsHtml(liste());const pn=$('#pane');if(pn)pn.scrollTop=sc;
+ if(fid){const n=document.getElementById(fid);if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}}
+ hookVorschau();tick()}
+
 function paneHook(c){const v=hv[c.id];if(v===undefined)ladeVorschlag(c.id);
- const wert=hookE[c.id]!=null?hookE[c.id]:c.hook;
- return `<label class="lbl">Hook-Text <span>max. 8 Wörter, oben in den ersten 2,5 s</span></label>
- <div class="feld"><input id="h_${c.id}" value="${esc(wert)}" placeholder="z. B. Das hat keiner kommen sehen" maxlength="80" oninput="hookE['${c.id}']=this.value" onkeydown="if(event.key=='Enter')hook('${c.id}')">
- <button class="btn pri" ${busy[c.id]?'disabled':''} onclick="hook('${c.id}')">${busy[c.id]?'Baue ein …':(c.hook?'Ändern':'Einbauen')}</button></div>
- <label class="lbl">${sv(P.spark,14)} Vorschläge <span>antippen, dann einbauen</span></label>
- <div class="chips">${v?v.map(t=>`<button class="chip ${wert==t?'an':''}" data-t="${esc(t)}" onclick="hookWahl('${c.id}',this.dataset.t)">${esc(t)}</button>`).join(''):'<span class="klein">Lädt …</span>'}</div>
- <label class="lbl">Hook-Typ <span>für die Auswertung im Tracker</span></label>
- <div class="chips">${TYPEN.map(t=>`<button class="chip ${c.hook_typ==t?'an':''}" onclick="typSetzen('${c.id}','${t}')">${t}</button>`).join('')}</div>`}
+ const w=hookE[c.id]!=null?hookE[c.id]:(c.hook||''),n=w.trim()?w.trim().split(/ +/).length:0;
+ return `<div class="lbl">Hook-Text <span class="zaehler ${n>8?'warn':''}" id="wz">${n} / 8 Wörter</span></div>
+ <div class="feld"><input id="h_${c.id}" value="${esc(w)}" placeholder="z. B. Das hat keiner kommen sehen" maxlength="80" autocomplete="off" oninput="hookTipp('${c.id}',this.value)" onkeydown="if(event.key=='Enter')hook('${c.id}')">
+ <button class="btn pri" ${busy[c.id]?'disabled':''} onclick="hook('${c.id}')">${busy[c.id]?'Wird eingebaut …':(c.hook?'Ändern':'Einbauen')}</button></div>
+ <div class="leise">Steht in den ersten 2,5 Sekunden oben im Bild. Beim Tippen siehst du links eine Vorschau.</div>
+ <div class="lbl">Vorschläge <span>aus Gesagtem und Chat</span></div>
+ <div class="vorschlaege">${v?v.map(t=>`<button class="${w==t?'an':''}" data-t="${esc(t)}" onclick="hookWahl('${c.id}',this.dataset.t)"><span>${esc(t)}</span><i>${w==t?'gewählt':'übernehmen'}</i></button>`).join(''):'<div class="leise" style="margin:0;padding:11px 12px">Lädt …</div>'}</div>
+ <div class="lbl">Hook-Typ <span>für die Auswertung im Tracker</span></div>
+ <div class="typen">${TYPEN.map(t=>`<button class="typ ${c.hook_typ==t?'an':''}" onclick="typSetzen('${c.id}','${t}')">${t}</button>`).join('')}</div>`}
+function hookTipp(id,val){hookE[id]=val;delete caps[id];const n=val.trim()?val.trim().split(/ +/).length:0,z=$('#wz');if(z){z.textContent=n+' / 8 Wörter';z.classList.toggle('warn',n>8)}hookVorschau()}
 async function ladeVorschlag(id){if(hv[id]!==undefined)return;hv[id]=null;const r=await api('/api/hookvorschlag?id='+encodeURIComponent(id));hv[id]=r.vorschlaege||[];if(id==sel)teil()}
-function hookWahl(id,t){hookE[id]=t;teil();const i=document.getElementById('h_'+id);if(i)i.focus()}
-async function typSetzen(id,t){const c=clips.find(x=>x.id==id),neu=c&&c.hook_typ==t?'':t;
- const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:neu});if(r.fehler)return alert(r.fehler);toast(neu?'Hook-Typ: '+neu:'Hook-Typ entfernt');load({still:true})}
-async function hook(id){const i=document.getElementById('h_'+id),t=(i?i.value:'').trim();if(!t)return alert('Bitte Hook-Text eingeben.');
+function hookWahl(id,t){hookE[id]=t;delete caps[id];teil();const i=document.getElementById('h_'+id);if(i){i.focus();i.setSelectionRange(t.length,t.length)}}
+async function typSetzen(id,t){const c=clips.find(x=>x.id==id),neu=c&&c.hook_typ==t?'':t;const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:neu});
+ if(r.fehler)return alert(r.fehler);toast(neu?'Hook-Typ: '+neu:'Hook-Typ entfernt');load({still:true})}
+async function hook(id){const i=document.getElementById('h_'+id),t=(i?i.value:'').trim();if(!t){if(i)i.focus();return}
  busy[id]=true;teil();const r=await api('/api/hook',{id,text:t});busy[id]=false;
- if(r.fehler){teil();return alert(r.fehler)}
- delete hookE[id];delete caps[id];hookV[id]=Date.now();toast('Hook eingebaut');load({voll:true})}
+ if(r.fehler){teil();return alert('Hook konnte nicht eingebaut werden: '+r.fehler)}
+ delete hookE[id];delete caps[id];hookV[id]=Date.now();autoplay=true;toast('Hook eingebaut');load({voll:true})}
 
-function paneCaption(c){const k=caps[c.id];if(k===undefined)ladeCaption(c.id);
- if(!k)return '<div class="leise">Caption wird erstellt …</div>';
- return `<div class="capkopf"><span class="klein">Titel: <b class="${k.laenge>100?'rot':''}">${k.laenge}</b> / 100 Zeichen</span><button class="btn pri" onclick="kopiere('${c.id}')">${sv(P.copy,16)}Kopieren</button></div>
- <textarea id="cp_${c.id}" readonly rows="11">${esc(k.block)}</textarea>
+function paneCaption(c){const k=caps[c.id];if(k===undefined)ladeCaption(c.id);if(!k)return '<div class="leise">Caption wird erstellt …</div>';
+ return `<div class="lbl">Titel, Beschreibung, Hashtags <span class="zaehler ${k.laenge>100?'warn':''}">Titel ${k.laenge} / 100</span></div>
+ <textarea id="cp_${c.id}" readonly rows="10">${esc(k.block)}</textarea>
+ <div class="zeile"><button class="btn pri" style="flex:1" onclick="kopiere('${c.id}')">${sv(P.copy,16)}Caption kopieren</button></div>
  ${k.kampagne?`<div class="hinweis"><b>Kampagne:</b> „Werbung“ und die Pflichtangaben sind drin. Nachweis: ${esc(k.hinweis)}</div>`:''}
- <div class="leise">Titel und Beschreibung nutzen deinen Hook. Nach einer Hook-Änderung wird die Caption neu erstellt.</div>`}
-async function ladeCaption(id){if(caps[id]!==undefined)return;caps[id]=null;const r=await api('/api/caption?id='+encodeURIComponent(id));
+ <div class="leise">${hookE[c.id]&&hookE[c.id].trim()&&hookE[c.id].trim()!=c.hook?'Nutzt deinen getippten Hook. Er ist noch nicht im Video, bau ihn unter „Hook“ ein.':c.hook?'Der Titel nutzt deinen Hook.':'Mit einem Hook wird der Titel stärker. Bau zuerst einen ein.'}</div>`}
+async function ladeCaption(id){if(caps[id]!==undefined)return;caps[id]=null;const e=hookE[id];const r=await api('/api/caption?id='+encodeURIComponent(id)+(e&&e.trim()?'&hook='+encodeURIComponent(e.trim()):''));
  if(r.fehler){delete caps[id];return alert(r.fehler)}caps[id]=r;if(id==sel)teil()}
-function kopiere(id){const t=document.getElementById('cp_'+id);if(!t)return;t.select();
- if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t.value).then(()=>toast('Caption kopiert'))}
- else{let ok=false;try{ok=document.execCommand('copy')}catch(e){}toast(ok?'Caption kopiert':'Bitte mit Strg+C kopieren')}}
+function kopiere(id){const t=document.getElementById('cp_'+id);if(!t)return;const fertig=ok=>{if(ok){merkeKopiert(id);teil();toast('Caption kopiert')}else{t.select();toast('Bitte mit Strg+C kopieren')}};
+ if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t.value).then(()=>fertig(true),()=>{t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}fertig(ok)});
+ else{t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}fertig(ok)}}
 
-const CHECKS=['Kein Spoiler, keine Zwischensequenz allein','Kein Leak, keine laute Musik im Hintergrund','Hook und Untertitel sind drin','Bei Kampagne: „Werbung“ sichtbar, Pflichtangaben drin'];
 function panePost(c){const ch=check[c.id]||[];
- return `<label class="lbl">Vor dem Posten</label>
- <div class="checks">${CHECKS.map((t,i)=>`<label class="check"><input type="checkbox" ${ch[i]?'checked':''} onchange="hake('${c.id}',${i},this.checked)"><span>${t}</span></label>`).join('')}</div>
- <label class="lbl">Dateien</label>
+ return `<div class="lbl">Vor dem Posten</div>
+ <div class="checks">${CHECKS.map((t,i)=>`<label class="check"><input type="checkbox" id="ck_${i}" ${ch[i]?'checked':''} onchange="(check['${c.id}']=check['${c.id}']||[])[${i}]=this.checked"><span>${t}</span></label>`).join('')}</div>
+ <div class="lbl">Dateien</div>
  <div class="zeile" style="margin-top:0"><a class="btn" href="${c.video}" download>${sv(P.down,16)}Video laden</a>${c.srt?`<a class="btn ghost" href="${c.srt}" download>Untertitel .srt</a>`:''}${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
  ${ups[c.id]?uploadPanel(c):''}
- <label class="lbl">YouTube-Link <span>nach dem Hochladen eintragen</span></label>
- <div class="feld"><input id="l_${c.id}" value="${esc(c.link)}" placeholder="https://youtube.com/shorts/…" onkeydown="if(event.key=='Enter')link('${c.id}')"><button class="btn" onclick="link('${c.id}')">Speichern</button></div>`}
-function hake(id,i,an){(check[id]=check[id]||[])[i]=an}
+ <div class="lbl">YouTube-Link <span>nach dem Hochladen eintragen</span></div>
+ <div class="feld"><input id="l_${c.id}" value="${esc(c.link)}" placeholder="https://youtube.com/shorts/…" autocomplete="off" onkeydown="if(event.key=='Enter')link('${c.id}')"><button class="btn" onclick="link('${c.id}')">Speichern</button></div>
+ ${c.link?'<div class="leise">Der Tracker holt ab jetzt stündlich die Aufrufe.</div>':''}`}
 async function link(id){const r=await api('/api/link',{id,link:document.getElementById('l_'+id).value});if(r.fehler)return alert(r.fehler);toast('Link gespeichert');load({still:true})}
 
 function waehle(id){if(id==sel)return;sel=id;autoplay=true;render()}
 async function setze(id,s){const l=liste(),i=l.findIndex(c=>c.id==id),nach=l[i+1]||l[i-1];
  const r=await api('/api/status',{id,status:s});if(r.fehler)return alert(r.fehler);
- if(s!=tab){sel=nach?nach.id:null;autoplay=!!nach}toast(s=='gut'?'Als gut markiert':s=='weg'?'Verworfen':'Zurück in Neu');load({voll:true})}
+ if(s!=filter){sel=nach?nach.id:null;autoplay=!!nach}toast(s=='gut'?'Als gut markiert':s=='weg'?'Verworfen':'Zurück in Neu');load({voll:true})}
+
+function tick(){const jetzt=Date.now();
+ document.querySelectorAll('.frist[data-ende]').forEach(e=>{const [t,k]=fristText(+e.dataset.ende);e.textContent=t;e.className='frist '+k});
+ document.querySelectorAll('.fristbox[data-ende]').forEach(e=>{const ende=+e.dataset.ende,d=+e.dataset.dauer,r=ende-jetzt,[t,k]=fristText(ende);
+  e.className='fristbox '+k;e.querySelector('[data-text]').textContent=r>0?'Kampagne: noch '+t+' zum Einreichen':'Einreichfrist der Kampagne ist vorbei';
+  const b=new Date(ende);e.querySelector('[data-bis]').textContent='bis '+String(b.getHours()).padStart(2,'0')+':'+String(b.getMinutes()).padStart(2,'0');
+  e.querySelector('i').style.width=Math.max(0,Math.min(100,r/d*100))+'%'})}
 
 function kanaeleHtml(){const L=cfg.clip_laenge_s||18;
- return `<div class="box"><b>Clip-Länge</b><div class="klein">Gilt für neue Clips. Der Höhepunkt liegt bei etwa zwei Dritteln, danach endet der Clip schnell.</div>
- <div class="laengen">${[15,16,17,18,19,20].map(s=>`<button class="chip ${L==s?'an':''}" onclick="laenge(${s})">${s} s</button>`).join('')}</div></div>
- <div class="box"><b>Überwachte Kanäle</b>`+cfg.kanaele.map(k=>`<div class="zeile"><div style="flex:1;min-width:0"><b>${esc(k.name)}</b> <span class="tag">${esc(k.rechte)}</span><div class="klein" style="overflow-wrap:anywhere">${esc(k.nachweis)}</div></div><button class="btn weg" onclick="loesche('${esc(k.name)}')">Entfernen</button></div>`).join('')+`</div>
- <div class="box"><b>Kanal hinzufügen</b><div class="hinweis">Fremde Kanäle nur mit Grundlage: Kampagne oder Erlaubnis des Streamers, dazu Link oder Notiz.</div>
- <div class="zeile"><input id="kn" placeholder="Kanalname (ohne twitch.tv/)"><select id="kr" style="width:auto"><option value="kampagne">kampagne</option><option value="erlaubnis">erlaubnis</option><option value="eigen">eigen</option></select></div>
+ return `<div class="box"><b>Clip-Länge</b><div class="klein">Gilt für neue Clips. Die Pointe liegt bei etwa zwei Dritteln, danach endet der Clip schnell.</div>
+ <div class="laengen">${[15,16,17,18,19,20].map(s=>`<button class="typ ${L==s?'an':''}" onclick="laenge(${s})">${s} s</button>`).join('')}</div></div>
+ <div class="box"><b>Überwachte Kanäle</b>`+(cfg.kanaele.length?cfg.kanaele.map(k=>`<div class="zeile" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>${esc(k.name)}</b> <span class="tag">${esc(k.rechte)}</span>${(st.aufnahme||[]).includes(k.name)?' <span class="pill koralle">live</span>':''}<div class="klein" style="overflow-wrap:anywhere;margin-top:2px">${esc(k.nachweis)}</div></div><button class="btn ghost weg" onclick="loesche('${esc(k.name)}')">Entfernen</button></div>`).join(''):'<div class="klein">Noch kein Kanal eingetragen.</div>')+`</div>
+ <div class="box"><b>Kanal hinzufügen</b><div class="hinweis">Fremde Kanäle nur mit Grundlage: Kampagne oder Erlaubnis des Streamers, dazu Link oder Notiz als Nachweis.</div>
+ <div class="zeile"><input id="kn" placeholder="Kanalname (ohne twitch.tv/)"><select id="kr"><option value="kampagne">kampagne</option><option value="erlaubnis">erlaubnis</option><option value="eigen">eigen</option></select></div>
  <div class="zeile"><input id="kv" placeholder="Nachweis: Link oder Notiz"><button class="btn pri" onclick="kanal()">Speichern und Watcher neu starten</button></div></div>
- <div class="box"><b>Watcher</b><div class="zeile"><button class="btn" onclick="api('/api/watcher',{aktion:'start'}).then(()=>load({voll:true}))">Watcher (neu) starten</button><button class="btn weg" onclick="api('/api/watcher',{aktion:'stop'}).then(()=>load({voll:true}))">Watcher stoppen</button></div></div>`}
+ <div class="box"><b>Watcher</b><div class="klein">${st.laeuft?'Läuft.':'Ist aus.'} Nach einem Absturz startet er bis zu fünfmal pro Stunde von selbst neu.</div><div class="zeile"><button class="btn" onclick="api('/api/watcher',{aktion:'start'}).then(()=>{toast('Watcher gestartet');load({voll:true})})">Watcher (neu) starten</button><button class="btn ghost weg" onclick="api('/api/watcher',{aktion:'stop'}).then(()=>{toast('Watcher gestoppt');load({voll:true})})">Watcher stoppen</button></div></div>`}
 async function laenge(s){if(!confirm('Clip-Länge auf '+s+' Sekunden stellen? Der Watcher startet dafür kurz neu, eine laufende Aufnahme beginnt von vorn.'))return;
  const r=await api('/api/einstellung',{clip_laenge_s:s});if(r.fehler)return alert(r.fehler);toast('Neue Clips: '+s+' Sekunden');load({voll:true})}
 
-async function load(opt){opt=opt||{};const [c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')]);clips=c.clips;cfg=cf;kontoSt=ko;
- $('#stat').innerHTML=`<span class="dot ${s.laeuft?'an':''}"></span>${s.laeuft?'Watcher läuft':'Watcher aus'}`;
+async function load(opt){opt=opt||{};let c,cf,s,ko;try{[c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')])}catch(e){return}
+ clips=c.clips;cfg=cf;st=s;kontoSt=ko;const live=s.aufnahme||[];
+ $('#stat').innerHTML=!s.laeuft?'<span class="dot"></span>Watcher aus':live.length?`<span class="dot rec"></span><span class="rec">REC</span>${esc(live.join(', '))}`:'<span class="dot bereit"></span>Wartet auf Livestream';
  $('#banner').innerHTML=(s.hinweis?`<div class="warn">${esc(s.hinweis)}</div>`:'')+(s.platz_warnung?`<div class="warn">Nur noch ${s.frei_gb} GB Festplatte frei (Warnung unter ${s.min_frei_gb} GB). Clips mit „Weg“ markieren oder alte Aufnahmen löschen.</div>`:'')+Object.entries(s.fehler||{}).map(([k,v])=>`<div class="warn">${esc(k)}: ${esc(v)}</div>`).join('');
- const neu=JSON.stringify([c.clips,cf,ko]);tabs();
+ const neu=JSON.stringify([c.clips,cf,ko,live,s.laeuft]);tabs();
  if(opt.still){sig=neu;teil();return}
  if(tab=='log'){if(!tippt())render();return}
- if(neu!==sig||opt.voll){if(!opt.voll&&(tippt()||videoBenutzt())){$('#neuBtn').innerHTML='<button class="btn pri" onclick="neuLaden()">Neue Clips – Anzeige aktualisieren</button>'}
-  else{sig=neu;$('#neuBtn').innerHTML='';render()}}}
-function videoBenutzt(){const v=$('#vid');return !!v&&!v.ended&&(!v.paused||v.currentTime>0.2)}
-async function neuLaden(){$('#neuBtn').innerHTML='';await load({voll:true})}
+ if(neu===sig&&!opt.voll)return;
+ if(!opt.voll&&tab=='clips'&&(tippt()||videoBenutzt())){if(!neuWartet){neuWartet=true;const a=$('.ablinfo');if(a&&!a.querySelector('.neuhin'))a.insertAdjacentHTML('beforeend','<button class="neuhin" onclick="neuLaden()">Neue Clips</button>')}return}
+ sig=neu;neuWartet=false;render()}
+function videoBenutzt(){const v=$('#vid');return !!v&&(!v.paused||v.currentTime>0.3)}
+function neuLaden(){neuWartet=false;load({voll:true})}
 
-document.addEventListener('keydown',e=>{if(tippt()||!KLIPS.includes(tab)||e.ctrlKey||e.metaKey||e.altKey)return;
+document.addEventListener('keydown',e=>{if(tippt()||tab!='clips'||e.ctrlKey||e.metaKey||e.altKey)return;
  const l=liste(),i=l.findIndex(c=>c.id==sel),v=$('#vid'),k=e.key.toLowerCase();
- if(k=='g'&&sel)setze(sel,'gut');else if(k=='w'&&sel)setze(sel,'weg');
+ if(k=='g'&&sel){e.preventDefault();setze(sel,'gut')}else if(k=='w'&&sel){e.preventDefault();setze(sel,'weg')}
  else if(k=='arrowdown'||k=='j'){e.preventDefault();if(l[i+1])waehle(l[i+1].id)}
  else if(k=='arrowup'||k=='k'){e.preventDefault();if(i>0)waehle(l[i-1].id)}
- else if(k==' '&&v&&document.activeElement!==v){e.preventDefault();v.paused?v.play():v.pause()}});
-async function updateLaden(){const u=await api('/api/update');window.updInfo=u;
+ else if(k=='arrowright'&&v){e.preventDefault();v.currentTime=Math.min(v.duration||0,v.currentTime+1)}
+ else if(k=='arrowleft'&&v){e.preventDefault();v.currentTime=Math.max(0,v.currentTime-1)}
+ else if(k=='m'){e.preventDefault();stummUmschalten()}
+ else if(k==' '&&v){e.preventDefault();v.paused?v.play():v.pause()}});
+setInterval(tick,15000);
+async function updateLaden(){let u;try{u=await api('/api/update')}catch(e){return}window.updInfo=u;
  $('#upd').innerHTML=u.info&&u.info.neu?`<div class="update"><span><b>Update verfügbar</b> <span class="klein">Version ${esc(u.info.kurz)} · Clips und Einstellungen bleiben erhalten</span></span><button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'')}
 function uploadPanel(c){const u=ups[c.id];return `<div class="box" style="margin-top:8px"><b>Upload zu YouTube</b><div class="hinweis">Nichts wird automatisch hochgeladen. Vorschau siehst du links im Video. Titel und Beschreibung prüfen, dann bewusst bestätigen.</div>
 <input id="ut_${c.id}" value="${esc(u.titel)}" maxlength="100" style="margin-bottom:6px"><textarea id="ub_${c.id}">${esc(u.beschreibung)}</textarea>
@@ -511,7 +737,7 @@ async function trendNeu(){const r=await api('/api/trend/aktualisieren',{});if(r.
 async function trackerNeu(){const r=await api('/api/tracker/aktualisieren',{});if(r.fehler)alert(r.fehler);render()}
 async function kanal(){const r=await api('/api/kanal',{name:$('#kn').value,rechte:$('#kr').value,nachweis:$('#kv').value});if(r.fehler)alert(r.fehler);load()}
 async function loesche(n){if(!confirm(n+' entfernen?'))return;await api('/api/kanal/loeschen',{name:n});load()}
-load();updateLaden();setInterval(load,8000);setInterval(updateLaden,600000);
+load({voll:true});updateLaden();setInterval(load,8000);setInterval(updateLaden,600000);
 </script></body></html>"""
 
 
@@ -548,7 +774,14 @@ class H(BaseHTTPRequestHandler):
             cfg = lade_config()
             frei = wartung.frei_gb()
             mind = float(cfg.get("min_frei_gb", 10))
-            self._json({"laeuft": watcher_laeuft(), "hinweis": WATCHER["hinweis"], "frei_gb": round(frei, 1),
+            aufn = BASIS / "aufnahmen"
+            def frisch(p):  # Ordner, in den in den letzten 90 s ein Segment geschrieben wurde
+                try:
+                    return time.time() - max(p.stat().st_mtime, (p / "segmente.csv").stat().st_mtime) < 90
+                except OSError:
+                    return time.time() - p.stat().st_mtime < 90
+            live = sorted({p.name.rsplit("_", 2)[0] for p in aufn.glob("*") if p.is_dir() and frisch(p)}) if aufn.is_dir() else []
+            self._json({"laeuft": watcher_laeuft(), "aufnahme": live if watcher_laeuft() else [], "hinweis": WATCHER["hinweis"], "frei_gb": round(frei, 1),
                         "min_frei_gb": mind, "platz_warnung": frei < mind, "fehler": dict(FEHLER)})
         elif p == "/api/trend":
             cfg = lade_config()
@@ -585,10 +818,11 @@ class H(BaseHTTPRequestHandler):
                 self._json({"fehler": str(e) or "Fehler"}, 400)
         elif p == "/api/caption":
             try:
-                ordner = sicher(parse_qs(urlparse(self.path).query).get("id", [""])[0])
+                q = parse_qs(urlparse(self.path).query)
+                ordner = sicher(q.get("id", [""])[0])
                 if not (ordner / "info.txt").is_file():
                     raise ValueError("Clip nicht gefunden")
-                self._json(caption.baue(ordner, lade_config()))
+                self._json(caption.baue(ordner, lade_config(), q.get("hook", [""])[0]))
             except (ValueError, OSError) as e:
                 self._json({"fehler": str(e) or "Fehler"}, 400)
         elif p == "/api/log":

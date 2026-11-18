@@ -28,13 +28,21 @@ def main():
         sys.exit("Keine passende Schrift gefunden.")
     shutil.copy(schrift, ordner / "_hook.ttf")  # relativer Pfad = keine Probleme mit C:\ im Filter
 
+    # Maße an die echte Videohöhe anpassen (ausgelegt auf 1920 px: Schrift 72, Zeilen ab 330, Abstand 90, Rand 6)
+    p = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height",
+                        "-of", "csv=p=0", "short.mp4"], cwd=ordner, capture_output=True, text=True)
+    try:
+        hoehe = int(p.stdout.strip().splitlines()[0])
+    except (ValueError, IndexError):
+        hoehe = 1920
+    f = hoehe / 1920
     zeilen = textwrap.wrap(text.upper(), 20)[:2]
     filter_ = []
     for i, z in enumerate(zeilen):
         (ordner / f"_hook{i}.txt").write_text(z, encoding="utf-8")
-        y = 330 + i * 90
-        filter_.append(f"drawtext=fontfile=_hook.ttf:textfile=_hook{i}.txt:fontsize=72:fontcolor=white:"
-                       f"borderw=6:bordercolor=black:x=(w-text_w)/2:y={y}:enable='lt(t,2.5)'")
+        y = round((330 + i * 90) * f)
+        filter_.append(f"drawtext=fontfile=_hook.ttf:textfile=_hook{i}.txt:fontsize={round(72 * f)}:fontcolor=white:"
+                       f"borderw={max(2, round(6 * f))}:bordercolor=black:x=(w-text_w)/2:y={y}:enable='lt(t,2.5)'")
     r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", "short.mp4", "-vf", ",".join(filter_),
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                         "-c:a", "copy", "-movflags", "+faststart", "short_hook.mp4"],

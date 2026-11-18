@@ -22,8 +22,11 @@ def _kanal(cfg, quelle):
     return {}
 
 
-def baue(ordner, cfg):
+def baue(ordner, cfg, hook_entwurf=None):
+    """hook_entwurf: noch nicht eingebauter Hook aus der Oberfläche, ersetzt den gespeicherten für die Vorschau."""
     f = _info(ordner)
+    if hook_entwurf and hook_entwurf.strip():
+        f["Hook"] = hook_entwurf.strip()[:100]
     quelle = f.get("Quelle", "")
     k = _kanal(cfg, quelle)
     r = f.get("Rechte", "").split()

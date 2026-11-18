@@ -16,8 +16,15 @@ erkennt Ausschläge und schneidet fertige 9:16-Shorts mit Untertiteln.
 Mehrere Kanäle: einfach weitere Blöcke in `kanaele` kopieren.
 
 ## Oberfläche
-- **Neu / Gut / Verworfen:** jeden Clip ansehen, mit „Gut“ oder „Weg“ sortieren, Hook-Text eintragen (setzt ihn ins Video), Video und .srt laden.
-- **Kanäle:** Kanäle hinzufügen und entfernen (ohne Nachweis bei fremden Kanälen geht es nicht), Watcher starten/stoppen.
+- **Clips:** links die Ablage (Neu, Gut, Verworfen), in der Mitte das Video mit Zeitleiste, rechts der Arbeitsbereich.
+  - Die Zeitleiste zeigt das Hook-Fenster (erste 2,5 s) und die **Pointe** (wo der Chat ausgeschlagen hat).
+  - **Hook:** tippen oder einen Vorschlag übernehmen. Die Vorschau erscheint sofort im Video, „Einbauen“ brennt ihn ein.
+  - **Caption:** Titel, Beschreibung und Hashtags zum Kopieren. Nutzt auch einen getippten, noch nicht eingebauten Hook.
+  - **Posten:** Checkliste, Video laden, YouTube-Link eintragen.
+  - Bei Kampagnen-Clips läuft ein Countdown bis zur Einreichfrist (z. B. Clix: 30 Minuten).
+  - Die drei Striche unter jedem Clip zeigen den Fortschritt: Hook, Caption kopiert, online.
+- **Tastenkürzel:** `G` gut, `W` weg, `↑`/`↓` Clip wechseln, `Leertaste` Play/Pause, `←`/`→` eine Sekunde, `M` Ton.
+- **Kanäle:** Kanäle hinzufügen und entfernen (ohne Nachweis bei fremden Kanälen geht es nicht), Clip-Länge 15 bis 20 s, Watcher starten/stoppen.
 - **Protokoll:** was der Watcher gerade macht.
 - Nur den Watcher ohne Oberfläche: `python watcher.py`.
 
