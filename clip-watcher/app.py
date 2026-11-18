@@ -388,6 +388,11 @@ textarea{font:12.5px/1.6 var(--f-mono);resize:vertical;min-height:130px}
 .check input:checked+span{color:var(--ink3);text-decoration:line-through}
 .leise{color:var(--ink3);font-size:12.5px;margin-top:10px}
 
+.fuss{flex:none;display:flex;justify-content:flex-end;gap:14px;padding:7px max(16px,env(safe-area-inset-right,0px)) calc(7px + env(safe-area-inset-bottom,0px)) 16px;border-top:1px solid var(--rule);font-size:12px;color:var(--ink3);background:var(--nacht)}
+.fuss a{color:var(--ink2)}
+.fuss a:hover{color:var(--aqua);text-decoration:none}
+.fuss .mono{color:var(--ink2)}
+
 /* Knöpfe */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--deck3);border:1px solid var(--rule2);border-radius:10px;padding:9px 14px;font-weight:500;text-decoration:none;color:var(--ink);white-space:nowrap;transition:background .12s,border-color .12s,transform .06s}
 .btn:hover{background:var(--deck4);border-color:var(--rule3);text-decoration:none}
@@ -484,7 +489,7 @@ ul.regeln{margin:10px 0;padding-left:18px;color:var(--ink2)}
 </style></head><body>
 <header class="top"><div class="brand"><span class="logo"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></span>clip-watcher</div><nav id="tabs"></nav><button id="stat" onclick="geheZu('kanaele')" title="Watcher und Kanäle"></button></header>
 <div id="banner" class="band"></div><div id="upd" class="band"></div>
-<main id="main"></main><div id="toast" role="status" aria-live="polite"></div>
+<main id="main"></main><footer id="fuss" class="fuss"></footer><div id="toast" role="status" aria-live="polite"></div>
 <script>
 let tab='clips',filter='neu',clips=[],cfg=null,st={},kontoSt={},sel=null,sig='',neuWartet=false,autoplay=false;
 let pane={},caps={},hv={},hookE={},busy={},ups={},check={},hookV={};
@@ -712,7 +717,11 @@ document.addEventListener('keydown',e=>{if(tippt()||tab!='clips'||e.ctrlKey||e.m
  else if(k==' '&&v){e.preventDefault();v.paused?v.play():v.pause()}});
 setInterval(tick,15000);
 async function updateLaden(){let u;try{u=await api('/api/update')}catch(e){return}window.updInfo=u;
- $('#upd').innerHTML=u.info&&u.info.neu?`<div class="update"><span><b>Update verfügbar</b> <span class="klein">Version ${esc(u.info.kurz)} · Clips und Einstellungen bleiben erhalten</span></span><button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'')}
+ $('#upd').innerHTML=u.info&&u.info.neu?`<div class="update"><span><b>Update verfügbar</b> <span class="klein">Version ${esc(u.info.kurz)} · Clips und Einstellungen bleiben erhalten</span></span><button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'');
+ const v=u.info&&u.info.installiert;
+ $('#fuss').innerHTML=`<span>Version ${v?'<span class="mono">'+esc(v)+'</span>':'unbekannt'}${u.info&&!u.info.neu?' · aktuell':''}</span><a href="#" id="updlink" onclick="updatePruefen();return false">Auf Update prüfen</a>`}
+async function updatePruefen(){const l=$('#updlink');if(l)l.textContent='Prüfe …';const r=await api('/api/update/pruefen',{});
+ if(r.fehler){alert(r.fehler)}else{const u=await api('/api/update');if(u.info&&!u.info.neu)toast('Du hast die neueste Version')}await updateLaden()}
 function uploadPanel(c){const u=ups[c.id];return `<div class="box" style="margin-top:8px"><b>Upload zu YouTube</b><div class="hinweis">Nichts wird automatisch hochgeladen. Vorschau siehst du links im Video. Titel und Beschreibung prüfen, dann bewusst bestätigen.</div>
 <input id="ut_${c.id}" value="${esc(u.titel)}" maxlength="100" style="margin-bottom:6px"><textarea id="ub_${c.id}">${esc(u.beschreibung)}</textarea>
 <select id="us_${c.id}" style="margin:6px 0"><option value="private">privat (Standard)</option><option value="unlisted">nicht gelistet</option><option value="public">öffentlich</option></select>
@@ -721,7 +730,6 @@ async function uploadOeffnen(id){const r=await api('/api/caption?id='+encodeURIC
 async function uploadGo(id){const sv=$('[id="us_'+id+'"]').value;if(sv!='private'&&!confirm('Sichtbarkeit „'+sv+'“ wirklich? Standard ist privat.'))return;
  const r=await api('/api/upload',{id,bestaetigt:true,sichtbarkeit:sv,titel:$('[id="ut_'+id+'"]').value,beschreibung:$('[id="ub_'+id+'"]').value});
  if(r.fehler)return alert(r.fehler);delete ups[id];alert('Hochgeladen ('+sv+'). Link wurde in die Liste eingetragen.');load({voll:true})}
-async function updatePruefen(){const r=await api('/api/update/pruefen',{});if(r.fehler)alert(r.fehler);else if(!(await api('/api/update')).info.neu)alert('Du hast die neueste Version.');updateLaden()}
 async function updateStart(){const u=window.updInfo||{};
  if(!confirm((u.aufnahme_aktiv?'ACHTUNG: Es läuft gerade eine Aufnahme, ein laufender Clip kann verloren gehen.\\n\\n':'')+'Update installieren? Clips, Einstellungen und Token bleiben erhalten. Die App startet kurz neu.'))return;
  const r=await api('/api/update/installieren',{});if(r.fehler)return alert(r.fehler);
