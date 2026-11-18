@@ -31,5 +31,6 @@
     "weg_clips_tage": 3,
     "aufnahmen_tage": 1,
     "roh_gut_tage": 7
-  }
+  },
+  "upload_aktiv": false
 }

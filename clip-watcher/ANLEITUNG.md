@@ -60,3 +60,9 @@ Credit in die Beschreibung. Bezahlter Clip: „Werbung“ sichtbar.
 - **Tracker** (`tracker.py`): stündlich Aufrufe, Likes, Kommentare der Clips, die in der Karte einen YouTube-Link haben. Aufrufe landen in `clips/liste.csv`, Rest in `tracker.json`.
 - **Caption:** Knopf pro Clip, Titel (max. 100 Zeichen), Beschreibung mit Credit, Hashtags. Bei `kampagne` mit „Werbung“ und den Pflichtangaben aus dem Nachweis.
 - **Dauerbetrieb:** siehe `dauerbetrieb.txt`. Aufräum-Werte in `config.json` unter `aufraeumen`, Festplattenwarnung über `min_frei_gb`.
+
+## YouTube-Konto, Durchsehrate, optionaler Upload
+- `client_secret.json` (OAuth-Client „Desktop-App“) selbst aus der Google Cloud Console laden und in den Programmordner legen. YouTube Analytics API aktivieren, dich als Testnutzer eintragen.
+- Tab „Tracker“ > „Mit Google verbinden“. Nur lesende Rechte. Das Token liegt in `token.json` (nur lokal, nie in die ZIP packen). „Trennen“ löscht es.
+- Spalte „Durchgesehen %“ und Auswertung nach Hook-Typ (Feld pro Clip) und Länge: erst ab 10 Clips pro Gruppe, Median.
+- Upload ist standardmäßig aus (`upload_aktiv` in `config.json` oder Schalter im Tracker-Tab, danach neu verbinden). Nur Clips mit Status „Gut“, nur per Knopf „Hochladen …“ und „Ja, jetzt hochladen“, Sichtbarkeit immer ausdrücklich, Standard privat.

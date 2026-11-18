@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import caption, tracker, trend, wartung
+import caption, konto, tracker, trend, wartung
 
 BASIS = Path(__file__).resolve().parent
 CLIPS = BASIS / "clips"
@@ -19,6 +19,7 @@ ERLAUBT = {"eigen", "kampagne", "erlaubnis"}
 WATCHER = {"proc": None, "gewollt": False, "neustarts": [], "hinweis": ""}
 LOCK = threading.Lock()
 MAX_NEUSTARTS_STUNDE = 5
+PORT = {"port": 8765}
 FEHLER = {}   # Meldungen der Hintergrundjobs (Trend, Tracker, Aufräumen) für die Oberfläche
 
 
@@ -102,6 +103,7 @@ def speichere_config(cfg):
 def clip_liste():
     out = []
     links = tracker.link_karte()
+    hooktypen = tracker.feld_karte("Hook-Typ")
     for info in sorted(CLIPS.glob("*/*/info.txt"), key=lambda p: p.stat().st_mtime, reverse=True):
         d = info.parent
         if not (d / "short.mp4").exists():
@@ -116,7 +118,7 @@ def clip_liste():
         ut = "fertig" if (d / "untertitel.fertig").exists() else ("keine" if (d / "untertitel.keine").exists() else "laeuft")
         video = "short_hook.mp4" if (d / "short_hook.mp4").exists() else "short.mp4"
         out.append({"id": rel, "status": st, "video": f"/files/{rel}/{video}", "ohne_hook": f"/files/{rel}/short.mp4", "ut": ut,
-                    "link": links.get(f"clips/{rel}", ""),
+                    "link": links.get(f"clips/{rel}", ""), "hook_typ": hooktypen.get(f"clips/{rel}", ""),
                     "srt": f"/files/{rel}/untertitel.srt" if (d / "untertitel.srt").exists() else "",
                     "hook": felder.get("Hook", ""), "quelle": felder.get("Quelle", ""),
                     "rechte": felder.get("Rechte", ""), "zeit": felder.get("Aufgenommen", ""),
@@ -156,6 +158,8 @@ def hintergrund():
                     job("trend", lambda: trend.abrufen(cfg))
                 if tracker.faellig():
                     job("tracker", lambda: tracker.aktualisiere(cfg))
+            if konto.status()["verbunden"] and tracker.durchsehrate_faellig():
+                job("analytics", tracker.aktualisiere_durchsehrate)
             if wartung.faellig(cfg):
                 job("aufraeumen", lambda: wartung.aufraeumen(cfg))
         except Exception as e:
@@ -192,7 +196,7 @@ a{color:#f5d90a}.warn{background:#4a1f21;border-radius:8px;padding:8px 10px;font
 <header><h1>clip-watcher</h1><span id="stat"></span></header>
 <div id="banner" style="padding:0 14px"></div><nav id="tabs"></nav><main id="main"></main>
 <script>
-let tab='neu',clips=[],cfg=null,status={},caps={};
+let tab='neu',clips=[],cfg=null,status={},caps={},ups={},kontoSt={},uwahl={};
 const $=s=>document.querySelector(s);
 const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
 function tabs(){const t=[['neu','Neu'],['gut','Gut'],['weg','Verworfen'],['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
@@ -206,7 +210,9 @@ ${c.chat?`<div class="klein">Chat: ${esc(c.chat)}</div>`:''}
 ${c.hook?`<div style="margin-top:6px">Hook: <b>${esc(c.hook)}</b></div>`:''}
 <div class="zeile"><input id="h_${c.id}" placeholder="Hook-Text (max. 8 Wörter)" value="${esc(c.hook)}" maxlength="80"><button class="btn pri" onclick="hook('${c.id}')">Hook einbauen</button></div>
 <div class="zeile"><input id="l_${c.id}" placeholder="YouTube-Link (nach dem Hochladen)" value="${esc(c.link)}"><button class="btn" onclick="link('${c.id}')">Link speichern</button></div>
-<div class="zeile"><button class="btn" onclick="caption('${c.id}')">Caption</button></div>
+<div class="zeile"><input id="t_${c.id}" placeholder="Hook-Typ (z. B. Frage, Zahl, Schock)" value="${esc(c.hook_typ)}" maxlength="40"><button class="btn" onclick="hooktyp('${c.id}')">Speichern</button></div>
+<div class="zeile"><button class="btn" onclick="caption('${c.id}')">Caption</button>${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
+${ups[c.id]?uploadPanel(c):''}
 ${caps[c.id]?`<div style="margin-top:8px"><textarea id="cp_${c.id}" readonly>${esc(caps[c.id].block)}</textarea><div class="klein">${caps[c.id].laenge} Zeichen im Titel${caps[c.id].hinweis?' · Nachweis: '+esc(caps[c.id].hinweis):''}</div><div class="zeile"><button class="btn pri" onclick="kopiere('${c.id}')">Kopieren</button><button class="btn" onclick="delete caps['${c.id}'];render()">Schließen</button></div></div>`:''}
 <div class="zeile"><button class="btn gut" onclick="setze('${c.id}','gut')">Gut</button><button class="btn weg" onclick="setze('${c.id}','weg')">Weg</button>
 <a class="btn" href="${c.video}" download style="text-decoration:none">Laden</a>${c.srt?`<a class="btn" href="${c.srt}" download style="text-decoration:none">.srt</a>`:''}</div>
@@ -222,6 +228,28 @@ function render(){tabs();const m=$('#main');
  else if(tab=='trends'){api('/api/trend').then(r=>{m.innerHTML=trendHtml(r)})}
  else if(tab=='tracker'){api('/api/tracker').then(r=>{m.innerHTML=trackerHtml(r)})}
  else if(tab=='log'){api('/api/log').then(r=>{m.innerHTML='<pre>'+esc(r.log||'(noch nichts)')+'</pre>'})}}
+function uploadPanel(c){const u=ups[c.id];return `<div class="box" style="margin-top:8px"><b>Upload zu YouTube</b><div class="hinweis">Nichts wird automatisch hochgeladen. Vorschau siehst du oben im Video. Titel und Beschreibung prüfen, dann bewusst bestätigen.</div>
+<input id="ut_${c.id}" value="${esc(u.titel)}" maxlength="100" style="margin-bottom:6px"><textarea id="ub_${c.id}">${esc(u.beschreibung)}</textarea>
+<select id="us_${c.id}" style="margin:6px 0"><option value="private">privat (Standard)</option><option value="unlisted">nicht gelistet</option><option value="public">öffentlich</option></select>
+<div class="zeile"><button class="btn pri" onclick="uploadGo('${c.id}')">Ja, jetzt hochladen</button><button class="btn" onclick="delete ups['${c.id}'];render()">Abbrechen</button></div></div>`}
+async function uploadOeffnen(id){const r=await api('/api/caption?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);ups[id]={titel:r.titel,beschreibung:r.beschreibung};render()}
+async function uploadGo(id){const sv=$('[id="us_'+id+'"]').value;if(sv!='private'&&!confirm('Sichtbarkeit „'+sv+'“ wirklich? Standard ist privat.'))return;
+ const r=await api('/api/upload',{id,bestaetigt:true,sichtbarkeit:sv,titel:$('[id="ut_'+id+'"]').value,beschreibung:$('[id="ub_'+id+'"]').value});
+ if(r.fehler)return alert(r.fehler);delete ups[id];alert('Hochgeladen ('+sv+'). Link wurde in die Liste eingetragen.');load()}
+async function hooktyp(id){const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:$('[id="t_'+id+'"]').value});if(r.fehler)alert(r.fehler);load()}
+function kontoBox(){const k=kontoSt;let h='<div class="box"><b>YouTube-Konto (nur lesend)</b> ';
+ if(!k.client_da)h+='<div class="hinweis">Zuerst <code>client_secret.json</code> aus der Google Cloud Console laden (Anmeldedaten → OAuth-Client-ID erstellen → Typ „Desktop-App“ → JSON herunterladen) und in den Programmordner legen. Zusätzlich in „OAuth-Zustimmungsbildschirm“ dich selbst als Testnutzer eintragen und die „YouTube Analytics API“ aktivieren.</div>';
+ else if(!k.verbunden)h+='<div class="klein">Nicht verbunden. Gelesen werden nur Analytics-Zahlen deiner eigenen Shorts.</div><div class="zeile"><button class="btn pri" onclick="kontoLogin()">Mit Google verbinden</button></div>';
+ else h+=`<span class="tag gut">verbunden</span> <button class="btn weg" onclick="kontoTrennen()">Trennen (Token löschen)</button> <button class="btn" onclick="durchNeu()">Durchsehrate jetzt holen</button>`;
+ h+=`<div class="zeile" style="align-items:center"><label><input type="checkbox" style="width:auto" ${k.upload_aktiv?'checked':''} onchange="uploadSchalter(this.checked)"> Upload per API erlauben (Standard: aus)</label></div>`;
+ if(k.upload_aktiv)h+=`<div class="hinweis">${k.upload_scope?'Upload-Berechtigung vorhanden. Der Knopf „Hochladen …“ erscheint bei Clips mit Status „Gut“.':'Upload ist an, aber die Berechtigung fehlt: Trennen und neu verbinden.'} Stand der YouTube-Doku (geprüft am 18.11.2026): Seit dem 2.11.2026 werden Uploads aus nicht geprüften Projekten nicht mehr automatisch auf privat gesperrt. Ohne Angabe wären sie aber öffentlich, deshalb sendet clip-watcher immer „privat“ als Standard mit. Ein Upload kostet 1.600 Quota-Punkte.</div>`;
+ return h+'</div>'}
+async function kontoLogin(){const r=await api('/api/konto/login',{});if(r.fehler)return alert(r.fehler);window.open(r.url,'_blank')}
+async function kontoTrennen(){if(!confirm('Token löschen und Verbindung trennen?'))return;await api('/api/konto/trennen',{});load();render()}
+async function uploadSchalter(a){await api('/api/konto/upload',{aktiv:a});load();render()}
+async function durchNeu(){const r=await api('/api/durchsehrate/aktualisieren',{});if(r.fehler)alert(r.fehler);render()}
+function auswHtml(a){const t=(titel,l)=>`<div style="margin-top:8px"><b>${titel}</b>`+(l.length?`<table><tr><th>Gruppe</th><th class="z">Clips</th><th class="z">Median Durchgesehen</th></tr>`+l.map(x=>`<tr><td>${esc(x.gruppe)}</td><td class="z">${x.clips}</td><td class="z">${x.median==null?'<span class="klein">zu wenig Daten (min. '+a.min+')</span>':x.median+' %'}</td></tr>`).join('')+'</table>':'<div class="klein">Noch keine Daten.</div>')+'</div>';
+ return `<div class="box"><b>Auswertung Durchsehrate</b> <span class="klein">(Median, erst ab ${a.min} Clips pro Gruppe)</span>`+t('Nach Hook-Typ',a.hook)+t('Nach Clip-Länge',a.laenge)+'</div>'}
 const zahl=n=>n==null?'–':Number(n).toLocaleString('de-DE');
 function keyBox(r){return r.schluessel?'':`<div class="box"><b>YouTube-API-Schlüssel fehlt</b><div class="hinweis">So bekommst du ihn kostenlos: 1) console.cloud.google.com öffnen, mit Google-Konto anmelden. 2) Oben ein neues Projekt anlegen. 3) „APIs &amp; Dienste“ → „Bibliothek“ → „YouTube Data API v3“ → Aktivieren. 4) „Anmeldedaten“ → „Anmeldedaten erstellen“ → „API-Schlüssel“. 5) Schlüssel hier eintragen (oder in config.json bei <code>youtube_api_key</code>). Das Tageslimit von 10.000 Punkten ist kostenlos.</div><input id="ak" placeholder="API-Schlüssel" type="password" autocomplete="off" style="margin-bottom:8px"><button class="btn pri" onclick="schluessel()">Schlüssel speichern</button></div>`}
 function trendHtml(r){let h=keyBox(r);if(r.fehler)h+=`<div class="warn">${esc(r.fehler)}</div>`;
@@ -229,12 +257,12 @@ function trendHtml(r){let h=keyBox(r);if(r.fehler)h+=`<div class="warn">${esc(r.
  if(!d){return h+(r.schluessel?'<div class="leer">Noch kein Abruf. Der erste Abruf läuft in wenigen Minuten, oder gleich starten:</div><div style="text-align:center"><button class="btn pri" onclick="trendNeu()">Jetzt abrufen</button></div>':'')}
  h+=`<div class="box"><b>Erkannte Muster</b> <span class="klein">(nur wenn mindestens 3 Videos verschiedener Kanäle sie zeigen, aus ${d.analysiert} Videos)</span>`+(d.muster.length?'<ul>'+d.muster.map(x=>`<li>${esc(x.text)}</li>`).join('')+'</ul>':'<div class="klein">Noch keine Muster erkennbar.</div>')+`<div class="klein">Ziel: Muster lernen, nicht fremde Videos kopieren.</div></div>`;
  h+=`<div class="box"><b>Top 20 nach Aufrufen pro Stunde</b> <span class="klein">Stand ${esc(d.abgerufen.replace('T',' '))} · Suchen heute: ${r.suchen}/${r.max_suchen}</span> <button class="btn" onclick="trendNeu()">Jetzt abrufen</button><div style="overflow:auto"><table><tr><th>#</th><th>Titel</th><th>Kanal</th><th class="z">Aufrufe</th><th class="z">Aufr./Std.</th><th>Link</th></tr>`+d.videos.map((v,i)=>`<tr><td>${i+1}</td><td>${esc(v.titel)}</td><td>${esc(v.kanal)}</td><td class="z">${zahl(v.aufrufe)}</td><td class="z">${zahl(v.pro_stunde)}</td><td><a href="${esc(v.link)}" target="_blank" rel="noopener">ansehen</a></td></tr>`).join('')+'</table></div></div>';return h}
-function trackerHtml(r){let h=keyBox(r);if(r.fehler)h+=`<div class="warn">${esc(r.fehler)}</div>`;
+function trackerHtml(r){let h=keyBox(r)+kontoBox();if(r.fehler)h+=`<div class="warn">${esc(r.fehler)}</div>`;
  const t=r.daten,w=t.woche,cl=c=>c?`${esc(c.quelle)} (${zahl(c.aufrufe)})`:'–';
  h+=`<div class="box"><div class="stat"><div><b>${zahl(t.median)}</b>Median Aufrufe</div><div><b>${cl(t.bester)}</b>Bester Clip</div><div><b>${cl(t.schlechtester)}</b>Schlechtester Clip</div></div>
  <div class="klein" style="margin-top:8px">Stand ${t.stand?esc(t.stand.replace('T',' ')):'noch nicht abgerufen'} · ${t.ohne_link} von ${t.gesamt} Clips ohne YouTube-Link <button class="btn" onclick="trackerNeu()">Jetzt aktualisieren</button></div></div>
  <div class="box"><b>Letzte 7 Tage</b><div class="stat" style="margin-top:6px"><div><b>${w.geschnitten}</b>geschnitten</div><div><b>${w.hochgeladen}</b>hochgeladen</div><div><b>${zahl(w.aufrufe)}</b>Aufrufe gesamt</div><div><b>${zahl(w.median)}</b>Median</div></div></div>
- <div class="box" style="overflow:auto"><table><tr><th>Datum</th><th>Clip</th><th>Quelle</th><th class="z">Aufrufe</th><th class="z">Likes</th><th class="z">Komm.</th><th>Link</th></tr>`+t.zeilen.map(z=>`<tr><td>${esc(z.datum)}</td><td>${esc(z.clip.split('/').slice(1).join('/'))}</td><td>${esc(z.quelle)}</td><td class="z">${zahl(z.aufrufe)}</td><td class="z">${zahl(z.likes)}</td><td class="z">${zahl(z.kommentare)}</td><td>${z.hat_link?`<a href="${esc(z.link)}" target="_blank" rel="noopener">ansehen</a>`:'<span class="klein">kein Link</span>'}</td></tr>`).join('')+'</table></div>';return h}
+ <div class="box" style="overflow:auto"><table><tr><th>Datum</th><th>Clip</th><th>Quelle</th><th class="z">Aufrufe</th><th class="z">Likes</th><th class="z">Komm.</th><th class="z">Durchgesehen %</th><th>Link</th></tr>`+t.zeilen.map(z=>`<tr><td>${esc(z.datum)}</td><td>${esc(z.clip.split('/').slice(1).join('/'))}</td><td>${esc(z.quelle)}</td><td class="z">${zahl(z.aufrufe)}</td><td class="z">${zahl(z.likes)}</td><td class="z">${zahl(z.kommentare)}</td><td class="z">${z.durchgesehen==null?'–':z.durchgesehen+' %'}</td><td>${z.hat_link?`<a href="${esc(z.link)}" target="_blank" rel="noopener">ansehen</a>`:'<span class="klein">kein Link</span>'}</td></tr>`).join('')+'</table></div>'+auswHtml(t.auswertung);return h}
 async function schluessel(){const r=await api('/api/schluessel',{schluessel:$('#ak').value});if(r.fehler)alert(r.fehler);load()}
 async function trendNeu(){const r=await api('/api/trend/aktualisieren',{});if(r.fehler)alert(r.fehler);render()}
 async function trackerNeu(){const r=await api('/api/tracker/aktualisieren',{});if(r.fehler)alert(r.fehler);render()}
@@ -246,7 +274,7 @@ async function setze(id,s){await api('/api/status',{id,status:s});load()}
 async function hook(id){const t=$('[id="h_'+id+'"]').value.trim();if(!t)return alert('Bitte Hook-Text eingeben.');const r=await api('/api/hook',{id,text:t});if(r.fehler)alert(r.fehler);load()}
 async function kanal(){const r=await api('/api/kanal',{name:$('#kn').value,rechte:$('#kr').value,nachweis:$('#kv').value});if(r.fehler)alert(r.fehler);load()}
 async function loesche(n){if(!confirm(n+' entfernen?'))return;await api('/api/kanal/loeschen',{name:n});load()}
-async function load(){const [c,cf,s]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher')]);clips=c.clips;cfg=cf;
+async function load(){const [c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')]);clips=c.clips;cfg=cf;kontoSt=ko;
  $('#stat').innerHTML=`<span class="dot ${s.laeuft?'an':''}"></span>${s.laeuft?'Watcher läuft':'Watcher aus'}`;
  $('#banner').innerHTML=(s.hinweis?`<div class="warn">${esc(s.hinweis)}</div>`:'')+(s.platz_warnung?`<div class="warn">Nur noch ${s.frei_gb} GB Festplatte frei (Warnung unter ${s.min_frei_gb} GB). Clips mit „Weg“ markieren oder alte Aufnahmen löschen.</div>`:'')+Object.entries(s.fehler||{}).map(([k,v])=>`<div class="warn">${esc(k)}: ${esc(v)}</div>`).join('');
  const a=document.activeElement&&document.activeElement.tagName;if(a!='INPUT'&&a!='TEXTAREA')render();else tabs()}
@@ -296,6 +324,22 @@ class H(BaseHTTPRequestHandler):
         elif p == "/api/tracker":
             self._json({"schluessel": bool(trend.schluessel(lade_config())), "daten": tracker.uebersicht(),
                         "fehler": FEHLER.get("tracker", "")})
+        elif p == "/api/konto":
+            self._json(dict(konto.status(), upload_aktiv=bool(lade_config().get("upload_aktiv", False))))
+        elif p == "/oauth/callback":
+            if self.client_address[0] not in ("127.0.0.1", "::1"):
+                return self.send_error(403)
+            try:
+                konto.fertig_login(parse_qs(urlparse(self.path).query))
+                msg = "Verbunden. Du kannst dieses Fenster schließen."
+            except trend.ApiFehler as e:
+                msg = str(e)
+            b = f"<!doctype html><meta charset=utf-8><body style='font-family:sans-serif;padding:30px'><h2>clip-watcher</h2><p>{msg}</p>".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(b)))
+            self.end_headers()
+            self.wfile.write(b)
         elif p == "/api/caption":
             try:
                 ordner = sicher(parse_qs(urlparse(self.path).query).get("id", [""])[0])
@@ -373,6 +417,39 @@ class H(BaseHTTPRequestHandler):
                     raise ValueError("Clip nicht gefunden")
                 tracker.setze_link(d["id"], d.get("link", ""))
                 return self._json({"ok": True})
+            if p == "/api/feld":
+                if d.get("spalte") != "Hook-Typ" or not sicher(d["id"]).is_dir():
+                    raise ValueError("Ungültig")
+                tracker.setze_feld(d["id"], "Hook-Typ", d.get("wert", ""))
+                return self._json({"ok": True})
+            if p == "/api/konto/login":
+                return self._json({"url": konto.start_login(PORT["port"], bool(lade_config().get("upload_aktiv", False)))})
+            if p == "/api/konto/trennen":
+                konto.trennen()
+                return self._json({"ok": True})
+            if p == "/api/konto/upload":
+                cfg = lade_config()
+                cfg["upload_aktiv"] = bool(d.get("aktiv"))
+                speichere_config(cfg)
+                return self._json({"ok": True})
+            if p == "/api/durchsehrate/aktualisieren":
+                job("analytics", tracker.aktualisiere_durchsehrate)
+                return self._json({"fehler": FEHLER["analytics"]} if FEHLER.get("analytics") else {"ok": True})
+            if p == "/api/upload":
+                # Nur auf ausdrücklichen Knopfdruck, nur wenn aktiviert, nur für Clips mit Status "gut".
+                if d.get("bestaetigt") is not True:
+                    raise ValueError("Upload nicht bestätigt.")
+                if not lade_config().get("upload_aktiv", False):
+                    raise ValueError("Upload ist ausgeschaltet.")
+                ordner = sicher(d["id"])
+                st = (ordner / "status.txt").read_text(encoding="utf-8").strip() if (ordner / "status.txt").exists() else "neu"
+                if st != "gut":
+                    raise ValueError("Nur Clips mit Status „Gut“ können hochgeladen werden.")
+                video = ordner / ("short_hook.mp4" if (ordner / "short_hook.mp4").exists() else "short.mp4")
+                vid = konto.upload(video, str(d.get("titel", "")).strip() or "GTA 6", str(d.get("beschreibung", "")),
+                                   d.get("sichtbarkeit", "private"))
+                tracker.setze_link(d["id"], f"https://www.youtube.com/shorts/{vid}")
+                return self._json({"ok": True, "id": vid})
             if p == "/api/schluessel":
                 key = str(d.get("schluessel", "")).strip()
                 if not re.fullmatch(r"[A-Za-z0-9_\-]{20,80}", key):
@@ -440,6 +517,7 @@ def main():
     ap.add_argument("--kein-watcher", action="store_true")
     a = ap.parse_args()
     CLIPS.mkdir(exist_ok=True)
+    PORT["port"] = a.port
     if not a.kein_watcher:
         watcher_start()
     threading.Thread(target=watcher_ueberwachen, daemon=True).start()

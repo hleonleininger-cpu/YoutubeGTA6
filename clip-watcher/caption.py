@@ -63,6 +63,7 @@ def baue(ordner, cfg):
         for t in pflicht_tags:
             if t.lower() not in (x.lower() for x in tags):
                 tags.append(t)
-    block = f"TITEL:\n{titel}\n\nBESCHREIBUNG:\n" + "\n".join(zeilen) + "\n\n" + " ".join(tags)
-    return {"titel": titel, "laenge": len(titel), "block": block, "kampagne": kampagne,
+    beschreibung = "\n".join(zeilen) + "\n\n" + " ".join(tags)
+    block = f"TITEL:\n{titel}\n\nBESCHREIBUNG:\n{beschreibung}"
+    return {"titel": titel, "beschreibung": beschreibung, "laenge": len(titel), "block": block, "kampagne": kampagne,
             "hinweis": nachweis if kampagne else ""}

@@ -7,7 +7,7 @@ import csv, json, os, re, statistics, threading
 from datetime import datetime, timedelta
 from pathlib import Path
 
-import trend
+import konto, trend
 
 BASIS = Path(__file__).resolve().parent
 LISTE = BASIS / "clips" / "liste.csv"
@@ -60,6 +60,14 @@ def link_karte():
     return {_norm(z[c]): z[l] for z in zeilen if len(z) > l and z[l].strip()}
 
 
+def feld_karte(spalte):
+    kopf, zeilen = lese_liste()
+    c, i = _spalte(kopf, "Clip"), _spalte(kopf, spalte)
+    if c is None or i is None:
+        return {}
+    return {_norm(z[c]): z[i] for z in zeilen if len(z) > i and z[i].strip()}
+
+
 def setze_link(clip_rel, link):
     """Trägt den YouTube-Link eines Clips in liste.csv ein. Leerer Link löscht ihn."""
     link = str(link or "").strip()
@@ -77,6 +85,23 @@ def setze_link(clip_rel, link):
                 z[l] = link
                 if p is not None and link and not z[p]:
                     z[p] = "YouTube"
+                _schreibe(kopf, zeilen)
+                return True
+    raise ValueError("Clip steht nicht in liste.csv.")
+
+
+def setze_feld(clip_rel, spalte, wert):
+    """Setzt ein Textfeld (z. B. Hook-Typ) in liste.csv."""
+    ziel = _norm("clips/" + clip_rel)
+    with CSV_LOCK:
+        kopf, zeilen = lese_liste()
+        c, i = _spalte(kopf, "Clip"), _spalte(kopf, spalte)
+        if c is None or i is None:
+            raise ValueError(f"liste.csv hat keine Spalte „{spalte}“.")
+        for z in zeilen:
+            z.extend([""] * (len(kopf) - len(z)))
+            if _norm(z[c]) == ziel:
+                z[i] = str(wert).strip()[:60]
                 _schreibe(kopf, zeilen)
                 return True
     raise ValueError("Clip steht nicht in liste.csv.")
@@ -121,6 +146,78 @@ def aktualisiere(cfg):
     return len(daten)
 
 
+def aktualisiere_durchsehrate():
+    """Analytics (nur lesend): Durchsehrate je eigenem Short -> Spalte "Durchgesehen %" und tracker.json."""
+    with CSV_LOCK:
+        kopf, zeilen = lese_liste()
+    l, d = _spalte(kopf, "Link"), _spalte(kopf, "Datum")
+    if l is None:
+        return 0
+    ids = {video_id(z[l]) for z in zeilen if len(z) > l and video_id(z[l])}
+    if not ids:
+        return 0
+    daten_alt = []
+    for z in zeilen:
+        try:
+            daten_alt.append(datetime.strptime(z[d], "%d.%m.%Y"))
+        except (ValueError, IndexError, TypeError):
+            pass
+    ab = (min(daten_alt) - timedelta(days=1) if daten_alt else datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+    erg = konto.durchsehrate(sorted(ids), ab)
+    with CSV_LOCK:
+        kopf, zeilen = lese_liste()
+        sp = _spalte(kopf, "Durchgesehen %")
+        if sp is not None:
+            for z in zeilen:
+                z.extend([""] * (len(kopf) - len(z)))
+                e = erg.get(video_id(z[l]))
+                if e:
+                    z[sp] = str(e["prozent"])
+            _schreibe(kopf, zeilen)
+    t = _lade()
+    for i, e in erg.items():
+        t["videos"].setdefault(i, {}).update(durchgesehen=e["prozent"], wiedergabedauer=e["dauer"])
+    t["analytics_stand"] = datetime.now().isoformat(timespec="seconds")
+    TRACKER_DATEI.write_text(json.dumps(t, ensure_ascii=False, indent=1), encoding="utf-8")
+    return len(erg)
+
+
+MIN_GRUPPE = 10
+
+
+def _stufe(sek):
+    for g, n in ((20, "bis 20 s"), (30, "21–30 s"), (45, "31–45 s")):
+        if sek <= g:
+            return n
+    return "über 45 s"
+
+
+def auswertung(rows):
+    """Median der Durchsehrate je Hook-Typ und je Längengruppe. Unter 10 Clips pro Gruppe: zu wenig Daten."""
+    def gruppiere(schluessel):
+        g = {}
+        for r in rows:
+            k = schluessel(r)
+            if k and r.get("durchgesehen") is not None:
+                g.setdefault(k, []).append(r["durchgesehen"])
+        return [{"gruppe": k, "clips": len(v),
+                 "median": round(statistics.median(v), 1) if len(v) >= MIN_GRUPPE else None}
+                for k, v in sorted(g.items(), key=lambda x: -len(x[1]))]
+    def sek(r):
+        m = re.match(r"\s*(\d+)", r.get("laenge") or "")
+        return _stufe(int(m.group(1))) if m else ""
+    return {"hook": gruppiere(lambda r: (r.get("hook_typ") or "").strip().lower()), "laenge": gruppiere(sek),
+            "min": MIN_GRUPPE}
+
+
+def durchsehrate_faellig():
+    s = _lade().get("analytics_stand")
+    try:
+        return not s or (datetime.now() - datetime.fromisoformat(s)).total_seconds() >= INTERVALL_S
+    except ValueError:
+        return True
+
+
 def faellig():
     s = _lade().get("stand")
     try:
@@ -136,6 +233,13 @@ def _int(x):
         return None
 
 
+def _fl(x):
+    try:
+        return float(str(x).replace(",", ".").strip())
+    except ValueError:
+        return None
+
+
 def uebersicht():
     kopf, zeilen = lese_liste()
     t = _lade()
@@ -147,7 +251,8 @@ def uebersicht():
         aufr = st.get("aufrufe") if st.get("aufrufe") is not None else _int(g(z, "Aufrufe"))
         rows.append({"clip": _norm(g(z, "Clip")), "quelle": g(z, "Quelle"), "datum": g(z, "Datum"),
                      "link": g(z, "Link"), "hat_link": bool(vid), "aufrufe": aufr, "likes": st.get("likes"),
-                     "kommentare": st.get("kommentare"), "hook_typ": g(z, "Hook-Typ"), "laenge": g(z, "Länge")})
+                     "kommentare": st.get("kommentare"), "hook_typ": g(z, "Hook-Typ"), "laenge": g(z, "Länge"),
+                     "durchgesehen": st.get("durchgesehen") if st.get("durchgesehen") is not None else _fl(g(z, "Durchgesehen %"))})
     mit = [r for r in rows if r["hat_link"] and r["aufrufe"] is not None]
     erg = {"stand": t.get("stand", ""), "zeilen": rows, "gesamt": len(rows),
            "ohne_link": sum(1 for r in rows if not r["hat_link"]), "median": None, "bester": None, "schlechtester": None}
@@ -167,4 +272,5 @@ def uebersicht():
     erg["woche"] = {"geschnitten": len(woche), "hochgeladen": sum(1 for r in woche if r["hat_link"]),
                     "aufrufe": sum(r["aufrufe"] for r in wm),
                     "median": statistics.median(r["aufrufe"] for r in wm) if wm else None}
+    erg["auswertung"] = auswertung(rows)
     return erg
