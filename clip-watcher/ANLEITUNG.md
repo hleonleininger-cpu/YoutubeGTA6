@@ -45,7 +45,7 @@ Ordner `clips/<Datum>/<kanal>_<Uhrzeit>/`:
 findet die lautesten Stellen und schneidet daraus Clips.
 
 ## Einstellungen (config.json)
-- `min_score`, `schwelle_faktor`: höher = weniger, aber sicherere Clips. Zu viele Clips? Erhöhen. Keine? Senken.
+- `auswahl`: `locker`, `normal`, `streng` (Standard) oder `highlights`. Steuert, wie stark der Chat ausschlagen muss und wie viele Clips pro Stunde höchstens entstehen. Einstellbar im Tab „Kanäle“, wirkt sofort.
 - `layout`: `unschaerfe` (ganzes Bild, unscharfer Hintergrund) oder `mitte` (Mittenschnitt)
 - `whisper_modell`: `small` ist gut für Deutsch; `base` ist schneller, `medium` genauer
 - `clip_laenge_s`: Länge der Clips in Sekunden (Standard 18, einstellbar 15 bis 20 im Tab „Kanäle“). Der Höhepunkt liegt bei etwa zwei Dritteln.

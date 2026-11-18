@@ -17,11 +17,14 @@ Dauerbetrieb: damit der clip-watcher rund um die Uhr läuft
    Danach erscheint in der Oberfläche ein Hinweis, und du startest ihn im Tab "Kanäle" von Hand.
 
 5. Festplatte: Die Oberfläche warnt, wenn weniger als 10 GB frei sind (config.json: "min_frei_gb").
-   Täglich wird aufgeräumt (config.json, Block "aufraeumen"):
-     weg_clips_tage  : Clips mit Status "weg" löschen, wenn älter als X Tage (Standard 3)
-     aufnahmen_tage  : Ordner "aufnahmen" löschen, wenn älter als X Tage (Standard 1)
-     roh_gut_tage    : roh.mp4 bei Clips mit Status "gut" löschen nach X Tagen (Standard 7)
-     aktiv           : false schaltet das Aufräumen aus
+   Aufgeräumt wird automatisch alle paar Minuten (config.json, Block "aufraeumen"):
+     weg_minuten        : verworfene Clips löschen, so viele Minuten nach dem Verwerfen (Standard 30)
+     neu_stunden        : nie angesehene Clips nach so vielen Stunden löschen (Standard 24)
+     gut_online_stunden : Clips mit YouTube-Link nach so vielen Stunden löschen (Standard 24)
+     roh_stunden        : roh.mp4 der übrigen Clips nach so vielen Stunden löschen (Standard 24)
+     aufnahmen_tage     : Ordner "aufnahmen" löschen, wenn so lange nichts mehr hineingeschrieben wurde (Standard 1)
+     aktiv              : false schaltet das Aufräumen aus
+   Gut markierte Clips ohne YouTube-Link bleiben erhalten. Die Zeilen in clips/liste.csv und der Tracker bleiben immer.
 
 6. Netzwerk: stabiles WLAN/LAN, kein VPN, das sich zwischendurch trennt.
 

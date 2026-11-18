@@ -52,6 +52,22 @@ def clip_fenster(cfg):
     return vor, laenge - vor
 
 
+# Clip-Auswahl: wie streng der Watcher ist. (min_score, schwelle_faktor, pause_s, max pro Stunde je Kanal, max pro Stunde gesamt)
+AUSWAHL = {
+    "locker":     (8,  2.5, 45,  12, 40),
+    "normal":     (12, 3.0, 90,  6,  15),
+    "streng":     (20, 4.0, 180, 3,  8),
+    "highlights": (35, 5.5, 300, 2,  4),
+}
+STANDARD_AUSWAHL = "streng"
+_STUNDE = {"lock": threading.Lock(), "alle": []}   # (zeit, score) aller Kanäle der letzten Stunde
+
+
+def auswahl_werte(cfg):
+    name = str(cfg.get("auswahl") or STANDARD_AUSWAHL).lower()
+    return AUSWAHL.get(name, AUSWAHL[STANDARD_AUSWAHL])
+
+
 def pruefe_rechte(rechte, nachweis):
     """Rechte vor Qualität: ohne Grundlage wird nichts aufgenommen."""
     r = str(rechte or "").strip().lower()
@@ -508,6 +524,37 @@ class Kanal(threading.Thread):
         self.test_quelle, self.test_chat = test_quelle, test_chat
         self.jobs = queue.Queue()
         self.anzahl = 0
+        self.eigene = []          # (zeit, score) der Clips dieses Kanals in der letzten Stunde
+        self._cfg_zeit = None
+
+    def cfg_aktuell(self):
+        """Liest config.json neu, sobald sie sich ändert. Clip-Länge und Auswahl wirken so sofort, ohne Neustart."""
+        if self.test_quelle:
+            return self.cfg
+        try:
+            t = (BASIS / "config.json").stat().st_mtime
+            if t != self._cfg_zeit:
+                neu = lade_config()
+                self._cfg_zeit = t
+                self.cfg = neu
+        except (OSError, ValueError):
+            pass
+        return self.cfg
+
+    def darf_clip(self, score, cfg):
+        """Nur die besten Momente: Obergrenze pro Stunde je Kanal und insgesamt. Ein klar stärkerer Moment (1,5-fach) geht immer durch."""
+        _, _, _, pro_kanal, gesamt = auswahl_werte(cfg)
+        jetzt = time.time()
+        with _STUNDE["lock"]:
+            _STUNDE["alle"] = [x for x in _STUNDE["alle"] if jetzt - x[0] < 3600]
+            self.eigene = [x for x in self.eigene if jetzt - x[0] < 3600]
+            beste = max([x[1] for x in _STUNDE["alle"]] or [0])
+            voll = len(self.eigene) >= pro_kanal or len(_STUNDE["alle"]) >= gesamt
+            if voll and score < 1.5 * max([x[1] for x in self.eigene] or [beste] or [0]):
+                return False
+            self.eigene.append((jetzt, score))
+            _STUNDE["alle"].append((jetzt, score))
+            return True
 
     def ist_live(self):
         if self.test_quelle:
@@ -559,6 +606,7 @@ class Kanal(threading.Thread):
             if time.time() < naechste:
                 time.sleep(0.5)
                 continue
+            cfg = self.cfg_aktuell()
             von, bis = naechste - fenster, naechste
             naechste += fenster
             nachr = chat.hole(von, bis)
@@ -567,8 +615,12 @@ class Kanal(threading.Thread):
             verlauf.append(score)
             if basis is None or rec.start_wall is None:
                 continue
-            schwelle = max(cfg.get("min_score", 8), basis * cfg.get("schwelle_faktor", 2.5))
-            if score >= schwelle and bis - letzter_clip >= cfg.get("pause_zwischen_clips_s", 45):
+            min_score, faktor, pause, _, _ = auswahl_werte(cfg)
+            schwelle = max(min_score, basis * faktor)
+            if score >= schwelle and bis - letzter_clip >= pause:
+                if not self.darf_clip(score, cfg):
+                    log(self.name, f"Ausschlag {score:.0f} übersprungen: Stundenlimit der Auswahl „{cfg.get('auswahl') or STANDARD_AUSWAHL}“ erreicht")
+                    continue
                 letzter_clip = bis
                 moment = rec.rec_zeit(von) - cfg.get("chat_verzug_s", 4)
                 vor, nach = clip_fenster(cfg)

@@ -9,10 +9,7 @@
   "qualitaet": "1080p60,1080p,best",
   "pruef_intervall_s": 60,
   "fenster_s": 10,
-  "min_score": 8,
-  "schwelle_faktor": 2.5,
   "chat_verzug_s": 4,
-  "pause_zwischen_clips_s": 45,
   "clip_laenge_s": 18,
   "layout": "unschaerfe",
   "zoom_auf_pointe": true,
@@ -27,9 +24,12 @@
   "min_frei_gb": 10,
   "aufraeumen": {
     "aktiv": true,
-    "weg_clips_tage": 3,
-    "aufnahmen_tage": 1,
-    "roh_gut_tage": 7
+    "weg_minuten": 30,
+    "neu_stunden": 24,
+    "gut_online_stunden": 24,
+    "roh_stunden": 24,
+    "aufnahmen_tage": 1
   },
-  "upload_aktiv": false
+  "upload_aktiv": false,
+  "auswahl": "streng"
 }

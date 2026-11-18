@@ -189,7 +189,7 @@ def hintergrund():
                 job("aufraeumen", lambda: wartung.aufraeumen(cfg))
         except Exception as e:
             print(f"[app] Hintergrundjob: {e}", flush=True)
-        time.sleep(300 if trend.schluessel(lade_config()) else 600)
+        time.sleep(120)
 
 
 # ------------------------------------------------------------ Oberfläche
@@ -439,6 +439,14 @@ code{font-family:var(--f-mono);background:var(--deck3);padding:1px 5px;border-ra
 ul{margin:8px 0;padding-left:20px}
 li{margin:4px 0}
 .laengen{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.auswahl{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:12px}
+.auswahl button{display:flex;flex-direction:column;gap:3px;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid var(--rule2);background:var(--deck2);color:var(--ink2);transition:.12s}
+.auswahl button:hover{border-color:var(--rule3);color:var(--ink)}
+.auswahl button b{font:600 14.5px/1.2 var(--f-disp);color:var(--ink)}
+.auswahl button span{font-size:12.5px;line-height:1.4}
+.auswahl button.an{background:var(--aquaT);border-color:rgba(79,214,200,.5)}
+.auswahl button.an b{color:var(--aqua)}
+ul.regeln{margin:10px 0;padding-left:18px;color:var(--ink2)}
 
 .leer{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:40px 24px;color:var(--ink2);height:100%}
 .leer .ikon{width:56px;height:56px;border-radius:14px;background:var(--deck2);display:grid;place-items:center;color:var(--ink3);margin-bottom:4px}
@@ -656,16 +664,29 @@ function tick(){const jetzt=Date.now();
   const b=new Date(ende);e.querySelector('[data-bis]').textContent='bis '+String(b.getHours()).padStart(2,'0')+':'+String(b.getMinutes()).padStart(2,'0');
   e.querySelector('i').style.width=Math.max(0,Math.min(100,r/d*100))+'%'})}
 
-function kanaeleHtml(){const L=cfg.clip_laenge_s||18;
- return `<div class="box"><b>Clip-Länge</b><div class="klein">Gilt für neue Clips. Die Pointe liegt bei etwa zwei Dritteln, danach endet der Clip schnell.</div>
+const AUSW=[['locker','Locker','Viele Clips, auch kleine Ausschläge'],['normal','Normal','Deutliche Ausschläge'],['streng','Streng','Nur starke Momente, höchstens 3 pro Stunde und Kanal'],['highlights','Nur Highlights','Die allerbesten, höchstens 2 pro Stunde und Kanal']];
+let wa={};
+function kanaeleHtml(){const L=cfg.clip_laenge_s||18,A=cfg.auswahl||'streng';if(!wa.regeln)ladeWartung();
+ return `<div class="box"><b>Clip-Auswahl</b><div class="klein">Wie streng der Watcher ist. Gilt sofort, ein Neustart ist nicht nötig. Weniger Clips heißt weniger zum Durchsehen und weniger Speicher.</div>
+ <div class="auswahl">${AUSW.map(([k,t,u])=>`<button class="${A==k?'an':''}" onclick="auswahl('${k}')"><b>${t}</b><span>${u}</span></button>`).join('')}</div></div>
+ <div class="box"><b>Clip-Länge</b><div class="klein">Gilt für neue Clips. Die Pointe liegt bei etwa zwei Dritteln, danach endet der Clip schnell.</div>
  <div class="laengen">${[15,16,17,18,19,20].map(s=>`<button class="typ ${L==s?'an':''}" onclick="laenge(${s})">${s} s</button>`).join('')}</div></div>
+ ${speicherHtml()}
  <div class="box"><b>Überwachte Kanäle</b>`+(cfg.kanaele.length?cfg.kanaele.map(k=>`<div class="zeile" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>${esc(k.name)}</b> <span class="tag">${esc(k.rechte)}</span>${(st.aufnahme||[]).includes(k.name)?' <span class="pill koralle">live</span>':''}<div class="klein" style="overflow-wrap:anywhere;margin-top:2px">${esc(k.nachweis)}</div></div><button class="btn ghost weg" onclick="loesche('${esc(k.name)}')">Entfernen</button></div>`).join(''):'<div class="klein">Noch kein Kanal eingetragen.</div>')+`</div>
  <div class="box"><b>Kanal hinzufügen</b><div class="hinweis">Fremde Kanäle nur mit Grundlage: Kampagne oder Erlaubnis des Streamers, dazu Link oder Notiz als Nachweis.</div>
  <div class="zeile"><input id="kn" placeholder="Kanalname (ohne twitch.tv/)"><select id="kr"><option value="kampagne">kampagne</option><option value="erlaubnis">erlaubnis</option><option value="eigen">eigen</option></select></div>
  <div class="zeile"><input id="kv" placeholder="Nachweis: Link oder Notiz"><button class="btn pri" onclick="kanal()">Speichern und Watcher neu starten</button></div></div>
  <div class="box"><b>Watcher</b><div class="klein">${st.laeuft?'Läuft.':'Ist aus.'} Nach einem Absturz startet er bis zu fünfmal pro Stunde von selbst neu.</div><div class="zeile"><button class="btn" onclick="api('/api/watcher',{aktion:'start'}).then(()=>{toast('Watcher gestartet');load({voll:true})})">Watcher (neu) starten</button><button class="btn ghost weg" onclick="api('/api/watcher',{aktion:'stop'}).then(()=>{toast('Watcher gestoppt');load({voll:true})})">Watcher stoppen</button></div></div>`}
-async function laenge(s){if(!confirm('Clip-Länge auf '+s+' Sekunden stellen? Der Watcher startet dafür kurz neu, eine laufende Aufnahme beginnt von vorn.'))return;
- const r=await api('/api/einstellung',{clip_laenge_s:s});if(r.fehler)return alert(r.fehler);toast('Neue Clips: '+s+' Sekunden');load({voll:true})}
+async function laenge(s){const r=await api('/api/einstellung',{clip_laenge_s:s});if(r.fehler)return alert(r.fehler);toast('Neue Clips: '+s+' Sekunden');load({voll:true})}
+async function auswahl(k){const r=await api('/api/einstellung',{auswahl:k});if(r.fehler)return alert(r.fehler);toast('Auswahl: '+(AUSW.find(a=>a[0]==k)||[])[1]);load({voll:true})}
+async function ladeWartung(){wa=await api('/api/wartung');if(tab=='kanaele'){const b=$('#speicher');if(b)b.outerHTML=speicherHtml()}}
+function speicherHtml(){const r=wa.regeln;if(!r)return '<div class="box" id="speicher"><b>Speicher</b><div class="klein">Lädt …</div></div>';
+ const z=wa.zuletzt?new Date(wa.zuletzt):null,t=z?String(z.getHours()).padStart(2,'0')+':'+String(z.getMinutes()).padStart(2,'0'):null,n=(wa.bericht||[]).length;
+ return `<div class="box" id="speicher"><b>Speicher</b><div class="klein">Frei auf der Festplatte: <b class="mono" style="color:var(--ink)">${wa.frei_gb} GB</b>. Aufgeräumt wird automatisch alle paar Minuten.</div>
+ <ul class="regeln"><li>Verworfene Clips: nach <b>${r.weg_minuten} Min</b> gelöscht</li><li>Nie angesehene Clips: nach <b>${r.neu_stunden} Std</b> gelöscht</li><li>Clips mit YouTube-Link: nach <b>${r.gut_online_stunden} Std</b> gelöscht</li><li>Rohdatei (roh.mp4) übriger Clips: nach <b>${r.roh_stunden} Std</b> gelöscht</li></ul>
+ <div class="klein">Gut markierte Clips ohne Link bleiben, bis du den Link einträgst. Die Zahlen im Tracker bleiben immer erhalten.</div>
+ <div class="zeile"><button class="btn" onclick="aufraeumenJetzt()">Jetzt aufräumen</button>${t?`<span class="klein">Zuletzt ${t} Uhr, ${n} ${n==1?'Eintrag':'Einträge'} entfernt</span>`:''}</div></div>`}
+async function aufraeumenJetzt(){const r=await api('/api/aufraeumen',{});if(r.fehler)return alert(r.fehler);await ladeWartung();toast('Aufgeräumt')}
 
 async function load(opt){opt=opt||{};let c,cf,s,ko;try{[c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')])}catch(e){return}
  clips=c.clips;cfg=cf;st=s;kontoSt=ko;const live=s.aufnahme||[];
@@ -783,6 +804,9 @@ class H(BaseHTTPRequestHandler):
             live = sorted({p.name.rsplit("_", 2)[0] for p in aufn.glob("*") if p.is_dir() and frisch(p)}) if aufn.is_dir() else []
             self._json({"laeuft": watcher_laeuft(), "aufnahme": live if watcher_laeuft() else [], "hinweis": WATCHER["hinweis"], "frei_gb": round(frei, 1),
                         "min_frei_gb": mind, "platz_warnung": frei < mind, "fehler": dict(FEHLER)})
+        elif p == "/api/wartung":
+            cfg = lade_config()
+            self._json(dict(wartung.letzter_lauf(), regeln=wartung.einstellungen(cfg), frei_gb=round(wartung.frei_gb(), 1)))
         elif p == "/api/trend":
             cfg = lade_config()
             self._json({"schluessel": bool(trend.schluessel(cfg)), "daten": trend.lade(), "fehler": FEHLER.get("trend", ""),
@@ -910,14 +934,17 @@ class H(BaseHTTPRequestHandler):
                 threading.Timer(1.0, lambda: SERVER["srv"].shutdown()).start()
                 return self._json({"ok": True, "geaendert": geaendert})
             if p == "/api/einstellung":
-                laenge = int(d.get("clip_laenge_s", 0))
-                if not 15 <= laenge <= 20:
-                    raise ValueError("Clip-Länge: 15 bis 20 Sekunden.")
                 cfg = lade_config()
-                cfg["clip_laenge_s"] = laenge
-                speichere_config(cfg)
-                if watcher_laeuft():
-                    watcher_start()
+                if "clip_laenge_s" in d:
+                    laenge = int(d["clip_laenge_s"])
+                    if not 15 <= laenge <= 20:
+                        raise ValueError("Clip-Länge: 15 bis 20 Sekunden.")
+                    cfg["clip_laenge_s"] = laenge
+                if "auswahl" in d:
+                    if d["auswahl"] not in ("locker", "normal", "streng", "highlights"):
+                        raise ValueError("Unbekannte Auswahl.")
+                    cfg["auswahl"] = d["auswahl"]
+                speichere_config(cfg)   # der Watcher liest die Datei von selbst neu, kein Neustart nötig
                 return self._json({"ok": True})
             if p == "/api/feld":
                 if d.get("spalte") != "Hook-Typ" or not sicher(d["id"]).is_dir():
