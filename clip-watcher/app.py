@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import caption, konto, tracker, trend, wartung
+import aktualisieren, caption, konto, tracker, trend, wartung
 
 BASIS = Path(__file__).resolve().parent
 CLIPS = BASIS / "clips"
@@ -19,7 +19,10 @@ ERLAUBT = {"eigen", "kampagne", "erlaubnis"}
 WATCHER = {"proc": None, "gewollt": False, "neustarts": [], "hinweis": ""}
 LOCK = threading.Lock()
 MAX_NEUSTARTS_STUNDE = 5
+SERVER = {"srv": None}
 PORT = {"port": 8765}
+NEUSTART = {"an": False}   # True: App beendet sich mit Code 3, starten.bat startet sie neu
+UPDATE = {"info": None, "fehler": ""}
 FEHLER = {}   # Meldungen der Hintergrundjobs (Trend, Tracker, Aufräumen) für die Oberfläche
 
 
@@ -160,6 +163,9 @@ def hintergrund():
                     job("tracker", lambda: tracker.aktualisiere(cfg))
             if konto.status()["verbunden"] and tracker.durchsehrate_faellig():
                 job("analytics", tracker.aktualisiere_durchsehrate)
+            if time.time() - UPDATE.get("zeit", 0) > 3600:
+                UPDATE["zeit"] = time.time()
+                job("update", lambda: UPDATE.update(info=aktualisieren.pruefen(cfg)))
             if wartung.faellig(cfg):
                 job("aufraeumen", lambda: wartung.aufraeumen(cfg))
         except Exception as e:
@@ -194,7 +200,7 @@ a{color:#f5d90a}.warn{background:#4a1f21;border-radius:8px;padding:8px 10px;font
 .leer{color:#9aa0ae;text-align:center;padding:40px 10px}.hinweis{background:#3a3210;border-radius:8px;padding:8px 10px;font-size:13px;margin:8px 0}
 </style></head><body>
 <header><h1>clip-watcher</h1><span id="stat"></span></header>
-<div id="banner" style="padding:0 14px"></div><nav id="tabs"></nav><main id="main"></main>
+<div id="banner" style="padding:0 14px"></div><div id="upd" style="padding:0 14px"></div><nav id="tabs"></nav><main id="main"></main>
 <script>
 let tab='neu',clips=[],cfg=null,status={},caps={},hookE={},hv={},ups={},kontoSt={},uwahl={};
 const $=s=>document.querySelector(s);
@@ -238,6 +244,14 @@ async function uploadOeffnen(id){const r=await api('/api/caption?id='+encodeURIC
 async function uploadGo(id){const sv=$('[id="us_'+id+'"]').value;if(sv!='private'&&!confirm('Sichtbarkeit „'+sv+'“ wirklich? Standard ist privat.'))return;
  const r=await api('/api/upload',{id,bestaetigt:true,sichtbarkeit:sv,titel:$('[id="ut_'+id+'"]').value,beschreibung:$('[id="ub_'+id+'"]').value});
  if(r.fehler)return alert(r.fehler);delete ups[id];alert('Hochgeladen ('+sv+'). Link wurde in die Liste eingetragen.');load()}
+async function updateLaden(){const u=await api('/api/update');window.updInfo=u;
+ $('#upd').innerHTML=u.info&&u.info.neu?`<div class="hinweis">Update verfügbar (${esc(u.info.kurz)}). <button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:'<div class="klein" style="margin:4px 0"><a href="#" onclick="updatePruefen();return false">Auf Update prüfen</a></div>'+(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'')}
+async function updatePruefen(){const r=await api('/api/update/pruefen',{});if(r.fehler)alert(r.fehler);else if(!(await api('/api/update')).info.neu)alert('Du hast die neueste Version.');updateLaden()}
+async function updateStart(){const u=window.updInfo||{};
+ if(!confirm((u.aufnahme_aktiv?'ACHTUNG: Es läuft gerade eine Aufnahme, ein laufender Clip kann verloren gehen.\\n\\n':'')+'Update installieren? Clips, Einstellungen und Token bleiben erhalten. Die App startet kurz neu.'))return;
+ const r=await api('/api/update/installieren',{});if(r.fehler)return alert(r.fehler);
+ $('#upd').innerHTML='<div class="hinweis">Update eingespielt ('+r.geaendert.length+' Dateien). App startet neu …'+(u.neustart_automatisch?'':' Falls die Seite nicht zurückkommt: starten.bat einfach neu öffnen.')+'</div>';
+ for(let i=0;i<40;i++){await new Promise(x=>setTimeout(x,1500));try{await fetch('/api/status-watcher');if(i>2){location.reload();return}}catch(e){}}}
 async function vorschlag(id){const r=await api('/api/hookvorschlag?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);hv[id]=r.vorschlaege;render()}
 function hookWahl(id,t){hookE[id]=t;render()}
 async function hooktyp(id){const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:$('[id="t_'+id+'"]').value});if(r.fehler)alert(r.fehler);load()}
@@ -282,7 +296,7 @@ async function load(){const [c,cf,s,ko]=await Promise.all([api('/api/clips'),api
  $('#stat').innerHTML=`<span class="dot ${s.laeuft?'an':''}"></span>${s.laeuft?'Watcher läuft':'Watcher aus'}`;
  $('#banner').innerHTML=(s.hinweis?`<div class="warn">${esc(s.hinweis)}</div>`:'')+(s.platz_warnung?`<div class="warn">Nur noch ${s.frei_gb} GB Festplatte frei (Warnung unter ${s.min_frei_gb} GB). Clips mit „Weg“ markieren oder alte Aufnahmen löschen.</div>`:'')+Object.entries(s.fehler||{}).map(([k,v])=>`<div class="warn">${esc(k)}: ${esc(v)}</div>`).join('');
  const a=document.activeElement&&document.activeElement.tagName;if(a!='INPUT'&&a!='TEXTAREA')render();else tabs()}
-load();setInterval(load,8000);
+load();updateLaden();setInterval(load,8000);setInterval(updateLaden,600000);
 </script></body></html>"""
 
 
@@ -328,6 +342,10 @@ class H(BaseHTTPRequestHandler):
         elif p == "/api/tracker":
             self._json({"schluessel": bool(trend.schluessel(lade_config())), "daten": tracker.uebersicht(),
                         "fehler": FEHLER.get("tracker", "")})
+        elif p == "/api/update":
+            aktiv = any(time.time() - (d.stat().st_mtime) < 120 for d in (BASIS / "aufnahmen").glob("*")) if (BASIS / "aufnahmen").is_dir() else False
+            self._json({"info": UPDATE["info"], "fehler": FEHLER.get("update", ""), "aufnahme_aktiv": aktiv,
+                        "neustart_automatisch": os.environ.get("CLIPWATCHER_LOOP") == "1"})
         elif p == "/api/konto":
             self._json(dict(konto.status(), upload_aktiv=bool(lade_config().get("upload_aktiv", False))))
         elif p == "/oauth/callback":
@@ -427,6 +445,21 @@ class H(BaseHTTPRequestHandler):
                     raise ValueError("Clip nicht gefunden")
                 tracker.setze_link(d["id"], d.get("link", ""))
                 return self._json({"ok": True})
+            if p == "/api/update/pruefen":
+                UPDATE["zeit"] = time.time()
+                cfg = lade_config()
+                job("update", lambda: UPDATE.update(info=aktualisieren.pruefen(cfg)))
+                return self._json({"fehler": FEHLER.get("update", "")} if FEHLER.get("update") else {"ok": True})
+            if p == "/api/update/installieren":
+                cfg = lade_config()
+                try:
+                    geaendert = aktualisieren.installieren(cfg)
+                except aktualisieren.UpdateFehler as e:
+                    return self._json({"fehler": str(e)})
+                UPDATE["info"] = None
+                NEUSTART["an"] = True
+                threading.Timer(1.0, lambda: SERVER["srv"].shutdown()).start()
+                return self._json({"ok": True, "geaendert": geaendert})
             if p == "/api/feld":
                 if d.get("spalte") != "Hook-Typ" or not sicher(d["id"]).is_dir():
                     raise ValueError("Ungültig")
@@ -525,6 +558,7 @@ def main():
     ap.add_argument("--lan", action="store_true", help="auch vom Handy im selben WLAN erreichbar")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--kein-watcher", action="store_true")
+    ap.add_argument("--neustart", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
     CLIPS.mkdir(exist_ok=True)
     PORT["port"] = a.port
@@ -534,8 +568,9 @@ def main():
     threading.Thread(target=hintergrund, daemon=True).start()
     host = "0.0.0.0" if a.lan else "127.0.0.1"
     srv = ThreadingHTTPServer((host, a.port), H)
+    SERVER["srv"] = srv
     print(f"clip-watcher läuft: http://localhost:{a.port}" + ("  (im WLAN auch über die IP deines PCs)" if a.lan else ""))
-    if not a.lan:
+    if not a.lan and not a.neustart:
         try:
             import webbrowser
             threading.Timer(1.2, lambda: webbrowser.open(f"http://localhost:{a.port}")).start()
@@ -548,6 +583,9 @@ def main():
     finally:
         with LOCK:
             watcher_stop_unlocked()
+        srv.server_close()
+    if NEUSTART["an"]:
+        sys.exit(3)
 
 
 if __name__ == "__main__":
