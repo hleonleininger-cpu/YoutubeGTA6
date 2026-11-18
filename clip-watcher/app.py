@@ -179,51 +179,77 @@ HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>clip-watcher</title>
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;background:#111318;color:#eceef2}
-header{position:sticky;top:0;background:#1a1d24;padding:10px 14px;display:flex;gap:10px;align-items:center;z-index:5;border-bottom:1px solid #2a2e38}
-h1{font-size:17px;margin:0;flex:1}.dot{width:10px;height:10px;border-radius:50%;background:#e5484d;display:inline-block;margin-right:6px}
-.dot.an{background:#30a46c}nav{display:flex;gap:6px;padding:10px 14px;overflow:auto}
-nav button,.btn{background:#242833;color:#eceef2;border:0;border-radius:8px;padding:9px 13px;font-size:14px;cursor:pointer}
-nav button.akt{background:#f5d90a;color:#111}.btn.gut{background:#30a46c}.btn.weg{background:#5a2b2e}.btn.pri{background:#f5d90a;color:#111}
-main{padding:0 14px 40px;max-width:1100px;margin:auto}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.karte{background:#1a1d24;border-radius:12px;overflow:hidden;border:1px solid #2a2e38}
-.karte video{width:100%;aspect-ratio:9/16;background:#000;display:block;max-height:60vh;object-fit:contain}
-.inh{padding:10px 12px;font-size:13px;line-height:1.45}.inh b{color:#f5d90a}.klein{color:#9aa0ae}
-.zeile{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}input,select{background:#242833;color:#eceef2;border:1px solid #333847;border-radius:8px;padding:9px;font-size:14px;width:100%}
-.tag{font-size:11px;padding:2px 7px;border-radius:6px;background:#242833}.tag.gut{background:#1d4d38}.tag.weg{background:#5a2b2e}
-pre{background:#0b0c10;padding:10px;border-radius:8px;font-size:12px;overflow:auto;max-height:50vh;white-space:pre-wrap}
-.box{background:#1a1d24;border:1px solid #2a2e38;border-radius:12px;padding:12px;margin-bottom:12px}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:7px 8px;border-bottom:1px solid #2a2e38;text-align:left}th{color:#9aa0ae;font-weight:500}td.z,th.z{text-align:right}
-textarea{background:#0b0c10;color:#eceef2;border:1px solid #333847;border-radius:8px;padding:9px;font-size:13px;width:100%;min-height:150px;font-family:inherit}
-a{color:#f5d90a}.warn{background:#4a1f21;border-radius:8px;padding:8px 10px;font-size:13px;margin:8px 0}.stat{display:flex;gap:10px;flex-wrap:wrap}.stat div{background:#242833;border-radius:8px;padding:8px 12px}.stat b{display:block;font-size:18px;color:#f5d90a}
-.leer{color:#9aa0ae;text-align:center;padding:40px 10px}.hinweis{background:#3a3210;border-radius:8px;padding:8px 10px;font-size:13px;margin:8px 0}
+*{box-sizing:border-box}
+:root{--bg:#0c0d12;--s1:#14161e;--s2:#1c1f2b;--line:#272b3a;--txt:#eef0f6;--mut:#8b92a6;--a1:#ff4f8b;--a2:#ff9a3c;--ok:#2fbf7a;--bad:#e5484d;--grad:linear-gradient(135deg,#ff4f8b,#ff9a3c)}
+html{color-scheme:dark}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(1200px 500px at 70% -10%,#2a1530 0,transparent 60%),var(--bg);color:var(--txt);line-height:1.45}
+header{position:sticky;top:0;z-index:10;background:rgba(12,13,18,.82);backdrop-filter:blur(10px);padding:12px 18px;display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--line)}
+.logo{width:30px;height:30px;border-radius:9px;background:var(--grad);display:grid;place-items:center;font-weight:800;color:#fff;font-size:15px}
+h1{font-size:18px;margin:0;flex:1;letter-spacing:.2px}
+#stat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);background:var(--s1);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block;box-shadow:0 0 0 3px rgba(229,72,77,.2)}.dot.an{background:var(--ok);box-shadow:0 0 0 3px rgba(47,191,122,.22)}
+nav{display:flex;gap:8px;padding:14px 18px 6px;overflow:auto;max-width:1200px;margin:auto;scrollbar-width:none}
+nav button{background:var(--s1);color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:14px;cursor:pointer;white-space:nowrap;transition:.15s}
+nav button:hover{color:var(--txt);border-color:#3a3f55}nav button.akt{background:var(--grad);color:#fff;border-color:transparent;font-weight:600}
+main{padding:10px 18px 60px;max-width:1200px;margin:auto}
+.btn{background:var(--s2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:14px;cursor:pointer;text-decoration:none;display:inline-block;transition:.15s}
+.btn:hover{border-color:#454b64;background:#232738}.btn.pri{background:var(--grad);color:#fff;border-color:transparent;font-weight:600}.btn.pri:hover{filter:brightness(1.08)}
+.btn.gut{background:rgba(47,191,122,.16);color:#6fe3ad;border-color:rgba(47,191,122,.4)}.btn.weg{background:rgba(229,72,77,.12);color:#ff8f93;border-color:rgba(229,72,77,.35)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px;margin-top:10px}
+.karte{background:var(--s1);border-radius:18px;overflow:hidden;border:1px solid var(--line);box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;flex-direction:column}
+.karte video{width:100%;aspect-ratio:9/16;background:#000;display:block;max-height:540px;object-fit:contain}
+.inh{padding:14px 16px 16px;font-size:13px}.kopf{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.kopf b{font-size:16px}
+.klein{color:var(--mut);font-size:12.5px}.zitat{margin:10px 0 4px;padding:9px 12px;background:var(--s2);border-left:3px solid var(--a1);border-radius:8px;font-style:italic}
+.hk{margin-top:8px}.hk b{color:var(--a2)}
+.aktion{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-top:12px}.aktion .btn{text-align:center;padding:11px 12px}
+details{border-top:1px solid var(--line);margin-top:12px;padding-top:2px}summary{cursor:pointer;padding:10px 0;font-weight:600;font-size:13.5px;color:var(--txt);list-style:none;display:flex;justify-content:space-between}
+summary::after{content:"+";color:var(--mut)}details[open] summary::after{content:"−"}summary::-webkit-details-marker{display:none}
+.zeile{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.zeile input{flex:1;min-width:0}
+input,select{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;width:100%}
+input:focus,textarea:focus,select:focus{outline:2px solid rgba(255,79,139,.5);border-color:transparent}
+.tag{font-size:11.5px;padding:3px 9px;border-radius:999px;background:var(--s2);color:var(--mut);border:1px solid var(--line)}
+.tag.neu{color:#ffc46b;border-color:rgba(255,154,60,.4)}.tag.gut{background:rgba(47,191,122,.15);color:#6fe3ad;border-color:rgba(47,191,122,.4)}.tag.weg{background:rgba(229,72,77,.12);color:#ff8f93;border-color:rgba(229,72,77,.35)}
+pre{background:#080910;padding:12px;border-radius:12px;font-size:12px;overflow:auto;max-height:65vh;white-space:pre-wrap;border:1px solid var(--line)}
+.box{background:var(--s1);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.4px}td.z,th.z{text-align:right}tr:hover td{background:rgba(255,255,255,.02)}
+textarea{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%;min-height:150px;font-family:inherit}
+a{color:var(--a2)}.warn{background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.35);border-radius:12px;padding:10px 14px;font-size:13px;margin:8px 0}
+.hinweis{background:rgba(255,154,60,.1);border:1px solid rgba(255,154,60,.3);border-radius:12px;padding:10px 14px;font-size:13px;margin:10px 0}
+.stat{display:flex;gap:12px;flex-wrap:wrap}.stat div{background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:10px 16px;color:var(--mut);font-size:12.5px}.stat b{display:block;font-size:20px;color:var(--txt)}
+.leer{color:var(--mut);text-align:center;padding:70px 10px;font-size:15px}.leer::before{content:"🎬";display:block;font-size:40px;margin-bottom:8px}
+.band{max-width:1200px;margin:0 auto;padding:0 18px}
+#neuBtn{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20}
+@media(max-width:600px){header,nav,main{padding-left:12px;padding-right:12px}.grid{grid-template-columns:1fr}}
 </style></head><body>
-<header><h1>clip-watcher</h1><span id="stat"></span></header>
-<div id="banner" style="padding:0 14px"></div><div id="upd" style="padding:0 14px"></div><nav id="tabs"></nav><main id="main"></main>
+<header><div class="logo">C</div><h1>clip-watcher</h1><span id="stat"></span></header>
+<div id="banner" class="band"></div><div id="upd" class="band"></div><nav id="tabs"></nav><main id="main"></main><div id="neuBtn"></div>
 <script>
-let tab='neu',clips=[],cfg=null,status={},caps={},hookE={},hv={},ups={},kontoSt={},uwahl={};
+let tab='neu',clips=[],cfg=null,status={},caps={},offen={},sig='',hookE={},hv={},ups={},kontoSt={},uwahl={};
 const $=s=>document.querySelector(s);
-const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+let erzwingen=false;
+const api=(u,b)=>{if(b)erzwingen=true;return fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json())};
 function tabs(){const t=[['neu','Neu'],['gut','Gut'],['weg','Verworfen'],['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
 $('#tabs').innerHTML=t.map(([k,n])=>`<button class="${tab==k?'akt':''}" onclick="tab='${k}';render()">${n}${['neu','gut','weg'].includes(k)?' ('+clips.filter(c=>c.status==k).length+')':''}</button>`).join('')}
 function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function karte(c){return `<div class="karte"><video src="${c.video}" controls playsinline preload="metadata"></video><div class="inh">
-<div><b>${esc(c.quelle)}</b> <span class="tag ${c.status}">${c.status}</span> <span class="tag">${esc(c.rechte)}</span>${c.ut=='laeuft'?' <span class="tag" style="background:#3a3210">Untertitel folgen …</span>':''}</div>
+function karte(c){const o=(k)=>(offen[c.id+k]?'open':'');const ot=(k)=>`ontoggle="offen['${c.id}${k}']=this.open"`;
+return `<div class="karte"><video src="${c.video}" controls playsinline preload="metadata"></video><div class="inh">
+<div class="kopf"><b>${esc(c.quelle)}</b><span class="tag ${c.status}">${c.status=='neu'?'Neu':c.status=='gut'?'Gut':'Verworfen'}</span><span class="tag">${esc(c.rechte.split(' ')[0])}</span>${c.ut=='laeuft'?'<span class="tag neu">Untertitel folgen …</span>':''}</div>
 <div class="klein">${esc(c.zeit)} · ${esc(c.ausloeser)}</div>
-${c.gesagt?`<div style="margin-top:6px">„${esc(c.gesagt)}“</div>`:''}
+${c.gesagt?`<div class="zitat">„${esc(c.gesagt)}“</div>`:''}
 ${c.chat?`<div class="klein">Chat: ${esc(c.chat)}</div>`:''}
-${c.hook?`<div style="margin-top:6px">Hook: <b>${esc(c.hook)}</b></div>`:''}
-<div class="zeile"><input id="h_${c.id}" placeholder="Hook-Text (max. 8 Wörter)" value="${esc(hookE[c.id]||c.hook)}" maxlength="80"><button class="btn pri" onclick="hook('${c.id}')">Hook einbauen</button></div>
-<div class="zeile"><button class="btn" onclick="vorschlag('${c.id}')">Hook-Vorschläge</button></div>
+${c.hook?`<div class="hk">Hook: <b>${esc(c.hook)}</b></div>`:''}
+<div class="aktion"><button class="btn gut" onclick="setze('${c.id}','gut')">&#10003; Gut</button><button class="btn weg" onclick="setze('${c.id}','weg')">&#10005; Weg</button><a class="btn" href="${c.video}" download title="Video laden">&#8681;</a></div>
+<details ${o('h')} ${ot('h')}><summary>Hook</summary>
+<div class="zeile"><input id="h_${c.id}" placeholder="Hook-Text (max. 8 Wörter)" value="${esc(hookE[c.id]||c.hook)}" maxlength="80"><button class="btn pri" onclick="hook('${c.id}')">Einbauen</button></div>
+<div class="zeile"><button class="btn" onclick="vorschlag('${c.id}')">&#10024; Vorschläge</button></div>
 ${hv[c.id]?`<div class="zeile">${hv[c.id].map(t=>`<button class="btn" onclick="hookWahl('${c.id}',this.dataset.t)" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>`:''}
-<div class="zeile"><input id="l_${c.id}" placeholder="YouTube-Link (nach dem Hochladen)" value="${esc(c.link)}"><button class="btn" onclick="link('${c.id}')">Link speichern</button></div>
-<div class="zeile"><input id="t_${c.id}" placeholder="Hook-Typ (z. B. Frage, Zahl, Schock)" value="${esc(c.hook_typ)}" maxlength="40"><button class="btn" onclick="hooktyp('${c.id}')">Speichern</button></div>
-<div class="zeile"><button class="btn" onclick="caption('${c.id}')">Caption</button>${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
+<div class="zeile"><input id="t_${c.id}" placeholder="Hook-Typ (Frage, Zahl, Schock …)" value="${esc(c.hook_typ)}" maxlength="40"><button class="btn" onclick="hooktyp('${c.id}')">Typ speichern</button></div></details>
+<details ${o('c')||(caps[c.id]||ups[c.id]?'open':'')} ${ot('c')}><summary>Caption &amp; Upload</summary>
+<div class="zeile"><button class="btn pri" onclick="caption('${c.id}')">Caption erstellen</button>${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
 ${ups[c.id]?uploadPanel(c):''}
 ${caps[c.id]?`<div style="margin-top:8px"><textarea id="cp_${c.id}" readonly>${esc(caps[c.id].block)}</textarea><div class="klein">${caps[c.id].laenge} Zeichen im Titel${caps[c.id].hinweis?' · Nachweis: '+esc(caps[c.id].hinweis):''}</div><div class="zeile"><button class="btn pri" onclick="kopiere('${c.id}')">Kopieren</button><button class="btn" onclick="delete caps['${c.id}'];render()">Schließen</button></div></div>`:''}
-<div class="zeile"><button class="btn gut" onclick="setze('${c.id}','gut')">Gut</button><button class="btn weg" onclick="setze('${c.id}','weg')">Weg</button>
-<a class="btn" href="${c.video}" download style="text-decoration:none">Laden</a>${c.srt?`<a class="btn" href="${c.srt}" download style="text-decoration:none">.srt</a>`:''}</div>
+</details>
+<details ${o('l')} ${ot('l')}><summary>YouTube-Link</summary>
+<div class="zeile"><input id="l_${c.id}" placeholder="Link nach dem Hochladen einfügen" value="${esc(c.link)}"><button class="btn" onclick="link('${c.id}')">Speichern</button></div>${c.srt?`<div class="zeile"><a class="btn" href="${c.srt}" download>Untertitel (.srt)</a></div>`:''}</details>
 </div></div>`}
 function render(){tabs();const m=$('#main');
  if(['neu','gut','weg'].includes(tab)){const l=clips.filter(c=>c.status==tab);
@@ -295,7 +321,12 @@ async function loesche(n){if(!confirm(n+' entfernen?'))return;await api('/api/ka
 async function load(){const [c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')]);clips=c.clips;cfg=cf;kontoSt=ko;
  $('#stat').innerHTML=`<span class="dot ${s.laeuft?'an':''}"></span>${s.laeuft?'Watcher läuft':'Watcher aus'}`;
  $('#banner').innerHTML=(s.hinweis?`<div class="warn">${esc(s.hinweis)}</div>`:'')+(s.platz_warnung?`<div class="warn">Nur noch ${s.frei_gb} GB Festplatte frei (Warnung unter ${s.min_frei_gb} GB). Clips mit „Weg“ markieren oder alte Aufnahmen löschen.</div>`:'')+Object.entries(s.fehler||{}).map(([k,v])=>`<div class="warn">${esc(k)}: ${esc(v)}</div>`).join('');
- const a=document.activeElement&&document.activeElement.tagName;if(a!='INPUT'&&a!='TEXTAREA')render();else tabs()}
+ const a=document.activeElement&&document.activeElement.tagName,tippt=(a=='INPUT'||a=='TEXTAREA'||a=='SELECT');
+ const neu=JSON.stringify([c.clips,cf,ko]);tabs();
+ if(tab=='log'){if(!tippt)render()}
+ else if(neu!==sig||erzwingen){if((tippt||videoBenutzt())&&!erzwingen){$('#neuBtn').innerHTML='<button class="btn pri" onclick="neuLaden()">Neue Daten – Anzeige aktualisieren</button>'}else{sig=neu;erzwingen=false;$('#neuBtn').innerHTML='';render()}}}
+function videoBenutzt(){return [...document.querySelectorAll('video')].some(v=>!v.ended&&(!v.paused||v.currentTime>0.2))}
+async function neuLaden(){sig='';$('#neuBtn').innerHTML='';await load()}
 load();updateLaden();setInterval(load,8000);setInterval(updateLaden,600000);
 </script></body></html>"""
 
