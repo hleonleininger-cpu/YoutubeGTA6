@@ -67,3 +67,44 @@ def baue(ordner, cfg):
     block = f"TITEL:\n{titel}\n\nBESCHREIBUNG:\n{beschreibung}"
     return {"titel": titel, "beschreibung": beschreibung, "laenge": len(titel), "block": block, "kampagne": kampagne,
             "hinweis": nachweis if kampagne else ""}
+
+
+# ------------------------------------------------------------ Hook-Vorschläge (ohne KI, aus info.txt)
+
+_REAKTION = {"lul": "Chat kann nicht mehr", "lulw": "Chat kann nicht mehr", "kekw": "Chat kann nicht mehr",
+             "omg": "Das hat keiner kommen sehen", "omegalul": "Chat kann nicht mehr", "pog": "Das war absurd gut",
+             "poggers": "Das war absurd gut", "wtf": "Was ist hier gerade passiert?", "w": "Der Chat feiert das komplett",
+             "l": "Das ging komplett schief", "rip": "Das ging komplett schief", "clip": "Der Chat will genau das clippen"}
+
+
+def _kuerzen(text, max_w=8):
+    w = text.split()
+    return " ".join(w[:max_w]) + ("…" if len(w) > max_w else "")
+
+
+def hook_vorschlaege(ordner):
+    f = {}
+    for z in (Path(ordner) / "info.txt").read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*(Gesagt|Chat-Wörter|Auslöser):\s*(.*)$", z)
+        if m:
+            f[m.group(1)] = m.group(2).strip()
+    out = []
+    # 1) was gesagt wurde: kurzer Satz als Zitat, dazu eine Frage
+    gesagt = f.get("Gesagt", "")
+    if gesagt and not gesagt.startswith("("):
+        satz = [s.strip() for s in re.split(r"[.!?…]+", gesagt) if 2 <= len(s.split()) <= 12]
+        if satz:
+            beste = max(satz, key=lambda s: sum(1 for c in s if c.isalpha() and c.isupper()) + len(s) / 10)
+            out.append("„" + _kuerzen(beste) + "“")
+        out.append("Hat er das wirklich gesagt?")
+    # 2) Chat-Reaktion
+    for w in re.split(r"[,\s]+", f.get("Chat-Wörter", "").lower()):
+        if w in _REAKTION and _REAKTION[w] not in out:
+            out.append(_REAKTION[w])
+    # 3) immer passende Standardhooks
+    out += ["Das hat keiner kommen sehen", "Warte bis zum Ende", "Chat dreht komplett durch", "Das glaubt dir keiner"]
+    res = []
+    for h in out:
+        if h not in res and len(h) <= 70:
+            res.append(h)
+    return res[:5]

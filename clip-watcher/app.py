@@ -196,7 +196,7 @@ a{color:#f5d90a}.warn{background:#4a1f21;border-radius:8px;padding:8px 10px;font
 <header><h1>clip-watcher</h1><span id="stat"></span></header>
 <div id="banner" style="padding:0 14px"></div><nav id="tabs"></nav><main id="main"></main>
 <script>
-let tab='neu',clips=[],cfg=null,status={},caps={},ups={},kontoSt={},uwahl={};
+let tab='neu',clips=[],cfg=null,status={},caps={},hookE={},hv={},ups={},kontoSt={},uwahl={};
 const $=s=>document.querySelector(s);
 const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
 function tabs(){const t=[['neu','Neu'],['gut','Gut'],['weg','Verworfen'],['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
@@ -208,7 +208,9 @@ function karte(c){return `<div class="karte"><video src="${c.video}" controls pl
 ${c.gesagt?`<div style="margin-top:6px">„${esc(c.gesagt)}“</div>`:''}
 ${c.chat?`<div class="klein">Chat: ${esc(c.chat)}</div>`:''}
 ${c.hook?`<div style="margin-top:6px">Hook: <b>${esc(c.hook)}</b></div>`:''}
-<div class="zeile"><input id="h_${c.id}" placeholder="Hook-Text (max. 8 Wörter)" value="${esc(c.hook)}" maxlength="80"><button class="btn pri" onclick="hook('${c.id}')">Hook einbauen</button></div>
+<div class="zeile"><input id="h_${c.id}" placeholder="Hook-Text (max. 8 Wörter)" value="${esc(hookE[c.id]||c.hook)}" maxlength="80"><button class="btn pri" onclick="hook('${c.id}')">Hook einbauen</button></div>
+<div class="zeile"><button class="btn" onclick="vorschlag('${c.id}')">Hook-Vorschläge</button></div>
+${hv[c.id]?`<div class="zeile">${hv[c.id].map(t=>`<button class="btn" onclick="hookWahl('${c.id}',this.dataset.t)" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>`:''}
 <div class="zeile"><input id="l_${c.id}" placeholder="YouTube-Link (nach dem Hochladen)" value="${esc(c.link)}"><button class="btn" onclick="link('${c.id}')">Link speichern</button></div>
 <div class="zeile"><input id="t_${c.id}" placeholder="Hook-Typ (z. B. Frage, Zahl, Schock)" value="${esc(c.hook_typ)}" maxlength="40"><button class="btn" onclick="hooktyp('${c.id}')">Speichern</button></div>
 <div class="zeile"><button class="btn" onclick="caption('${c.id}')">Caption</button>${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
@@ -236,6 +238,8 @@ async function uploadOeffnen(id){const r=await api('/api/caption?id='+encodeURIC
 async function uploadGo(id){const sv=$('[id="us_'+id+'"]').value;if(sv!='private'&&!confirm('Sichtbarkeit „'+sv+'“ wirklich? Standard ist privat.'))return;
  const r=await api('/api/upload',{id,bestaetigt:true,sichtbarkeit:sv,titel:$('[id="ut_'+id+'"]').value,beschreibung:$('[id="ub_'+id+'"]').value});
  if(r.fehler)return alert(r.fehler);delete ups[id];alert('Hochgeladen ('+sv+'). Link wurde in die Liste eingetragen.');load()}
+async function vorschlag(id){const r=await api('/api/hookvorschlag?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);hv[id]=r.vorschlaege;render()}
+function hookWahl(id,t){hookE[id]=t;render()}
 async function hooktyp(id){const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:$('[id="t_'+id+'"]').value});if(r.fehler)alert(r.fehler);load()}
 function kontoBox(){const k=kontoSt;let h='<div class="box"><b>YouTube-Konto (nur lesend)</b> ';
  if(!k.client_da)h+='<div class="hinweis">Zuerst <code>client_secret.json</code> aus der Google Cloud Console laden (Anmeldedaten → OAuth-Client-ID erstellen → Typ „Desktop-App“ → JSON herunterladen) und in den Programmordner legen. Zusätzlich in „OAuth-Zustimmungsbildschirm“ dich selbst als Testnutzer eintragen und die „YouTube Analytics API“ aktivieren.</div>';
@@ -340,6 +344,12 @@ class H(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(b)))
             self.end_headers()
             self.wfile.write(b)
+        elif p == "/api/hookvorschlag":
+            try:
+                ordner = sicher(parse_qs(urlparse(self.path).query).get("id", [""])[0])
+                self._json({"vorschlaege": caption.hook_vorschlaege(ordner)})
+            except (ValueError, OSError) as e:
+                self._json({"fehler": str(e) or "Fehler"}, 400)
         elif p == "/api/caption":
             try:
                 ordner = sicher(parse_qs(urlparse(self.path).query).get("id", [""])[0])
