@@ -68,7 +68,7 @@ def streamlink_cmd():
 def proben(datei):
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries",
                           "stream=codec_type,width,height:format=duration", "-of", "json", str(datei)],
-                         capture_output=True, text=True).stdout
+                         capture_output=True, text=True, encoding="utf-8", errors="replace").stdout
     info = json.loads(out or "{}")
     v = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), {})
     hat_ton = any(s.get("codec_type") == "audio" for s in info.get("streams", []))
@@ -234,7 +234,7 @@ class Aufnahme:
         r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", quelle, "-ss", f"{versatz:.2f}",
                             "-t", f"{bis - von:.2f}", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
                             "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", str(Path(ziel).resolve())],
-                           cwd=self.ordner, capture_output=True, text=True)
+                           cwd=self.ordner, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return r.returncode == 0 and Path(ziel).exists()
 
     def aufraeumen(self, behalten_s, geschuetzt_ab):
@@ -389,7 +389,7 @@ def render_short(ordner, roh, cfg, b, h, hat_ton, zoom_t, mit_ass, ziel):
     cmd += ["-map", "[a]", "-c:a", "aac", "-b:a", "160k", "-ar", "48000"] if hat_ton else []
     cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
             "-movflags", "+faststart", ziel]
-    return subprocess.run(cmd, cwd=ordner, capture_output=True, text=True)
+    return subprocess.run(cmd, cwd=ordner, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def info_setze(ordner, praefix, wert):
@@ -501,20 +501,23 @@ class Kanal(threading.Thread):
         if self.test_quelle:
             return True
         r = subprocess.run(streamlink_cmd() + ["--json", f"https://www.twitch.tv/{self.name}"],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
         try:
             return bool(json.loads(r.stdout).get("streams"))
-        except (ValueError, AttributeError):
+        except (ValueError, AttributeError, TypeError):
             return False
 
     def run(self):
         log(self.name, "Warte, bis der Kanal live geht …")
         while not self.stop.is_set():
-            if self.ist_live():
-                self.session()
-                if self.test_quelle:
-                    return
-                log(self.name, "Stream vorbei. Warte auf den nächsten …")
+            try:
+                if self.ist_live():
+                    self.session()
+                    if self.test_quelle:
+                        return
+                    log(self.name, "Stream vorbei. Warte auf den nächsten …")
+            except Exception as e:  # ein Fehler darf den Kanal nicht dauerhaft beenden
+                log(self.name, f"Fehler, versuche es weiter: {type(e).__name__}: {e}")
             self.stop.wait(self.cfg.get("pruef_intervall_s", 60))
 
     def session(self):
@@ -601,7 +604,7 @@ def lautstaerke_spitzen(datei, n, abstand):
     af = ("aresample=16000,asetnsamples=n=8000,"
           "astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level")
     err = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", str(datei), "-vn", "-af", af,
-                          "-f", "null", "-"], capture_output=True, text=True).stderr
+                          "-f", "null", "-"], capture_output=True, text=True, encoding="utf-8", errors="replace").stderr
     zeiten = [float(x) for x in re.findall(r"pts_time:([\d.]+)", err)]
     pegel = [-90.0 if x == "-inf" else max(float(x), -90.0) for x in re.findall(r"RMS_level=(-?[\d.]+|-inf)", err)]
     pts = list(zip(zeiten, pegel))

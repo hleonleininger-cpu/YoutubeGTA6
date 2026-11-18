@@ -38,7 +38,7 @@ def main():
     r = subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", "short.mp4", "-vf", ",".join(filter_),
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
                         "-c:a", "copy", "-movflags", "+faststart", "short_hook.mp4"],
-                       cwd=ordner, capture_output=True, text=True)
+                       cwd=ordner, capture_output=True, text=True, encoding="utf-8", errors="replace")
     for f in ["_hook.ttf"] + [f"_hook{i}.txt" for i in range(len(zeilen))]:
         (ordner / f).unlink(missing_ok=True)
     if r.returncode != 0:

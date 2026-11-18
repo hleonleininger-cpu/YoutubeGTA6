@@ -479,7 +479,7 @@ class H(BaseHTTPRequestHandler):
             if p == "/api/hook":
                 ordner = sicher(d["id"])
                 r = subprocess.run([sys.executable, str(BASIS / "hook.py"), str(ordner), str(d["text"])[:100]],
-                                   capture_output=True, text=True, cwd=BASIS)
+                                   capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=BASIS)
                 if r.returncode != 0:
                     return self._json({"fehler": (r.stderr or r.stdout)[-300:]})
                 info = ordner / "info.txt"
