@@ -3,7 +3,7 @@ Selbst-Update aus GitHub. Ersetzt nur Programmdateien (.py, .md, .txt, .command)
 Nie angefasst: config.json, clips/, aufnahmen/, token.json, client_secret.json, *.csv, *.json, *.bat.
 Vor dem Austausch wird jede .py-Datei auf Syntaxfehler geprüft; die alten Dateien landen in update_backup/.
 """
-import io, json, os, shutil, time, urllib.error, urllib.request, zipfile
+import io, json, os, shutil, socket, ssl, time, urllib.error, urllib.request, zipfile
 from pathlib import Path
 
 BASIS = Path(__file__).resolve().parent
@@ -17,26 +17,49 @@ GESCHUETZT = {"config.json", "dauerbetrieb.txt"}
 UNTERORDNER_VERBOTEN = {"clips", "aufnahmen", "update_backup", "__pycache__"}
 
 
-class UpdateFehler(Exception):
-    pass
+from trend import ApiFehler
+
+
+class UpdateFehler(ApiFehler):
+    """Erbt von ApiFehler, damit die Oberfläche die Meldung ohne internen Namen anzeigt."""
 
 
 def _branch(cfg):
     return str((cfg or {}).get("update_branch") or STANDARD_BRANCH)
 
 
+def _grund(e):
+    """Verständlicher Grund für einen Verbindungsfehler."""
+    r = getattr(e, "reason", e)
+    if isinstance(r, ssl.SSLCertVerificationError) or "CERTIFICATE" in str(r).upper():
+        return "Zertifikatsprüfung fehlgeschlagen (Virenscanner, Firmen-Proxy oder falsche Uhrzeit am PC?)"
+    if isinstance(r, socket.gaierror):
+        return "Der Name github.com lässt sich nicht auflösen (kein Internet, DNS oder VPN?)"
+    if isinstance(r, (socket.timeout, TimeoutError)) or "timed out" in str(r):
+        return "Zeitüberschreitung (langsames Netz oder Firewall)"
+    if isinstance(r, ConnectionRefusedError) or isinstance(r, ConnectionResetError):
+        return "Verbindung abgewiesen (Firewall oder Virenscanner blockiert Python?)"
+    return type(r).__name__
+
+
 def _holen(url, timeout=60):
     req = urllib.request.Request(url, headers={"User-Agent": "clip-watcher-update", "Accept": "application/vnd.github+json"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.read()
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            raise UpdateFehler("Update-Quelle nicht gefunden. Das GitHub-Repo muss öffentlich sein und der Branch "
-                               "existieren (config.json: update_branch).") from None
-        raise UpdateFehler(f"GitHub-Fehler {e.code}.") from None
-    except (urllib.error.URLError, OSError):
-        raise UpdateFehler("Keine Verbindung zu GitHub.") from None
+    letzter = None
+    for versuch in range(3):  # kurze Aussetzer abfangen
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                raise UpdateFehler("Update-Quelle nicht gefunden. Das GitHub-Repo muss öffentlich sein und der Branch "
+                                   "existieren (config.json: update_branch).") from None
+            if e.code in (403, 429):
+                raise UpdateFehler("GitHub lässt gerade keine Abfragen zu (Limit erreicht). Versuch es in etwa einer Stunde noch einmal.") from None
+            raise UpdateFehler(f"GitHub-Fehler {e.code}.") from None
+        except (urllib.error.URLError, OSError) as e:
+            letzter = e
+            time.sleep(1.5)
+    raise UpdateFehler("Keine Verbindung zu GitHub: " + _grund(letzter)) from None
 
 
 def installiert():
