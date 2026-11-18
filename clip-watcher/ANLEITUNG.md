@@ -16,16 +16,15 @@ erkennt Ausschläge und schneidet fertige 9:16-Shorts mit Untertiteln.
 Mehrere Kanäle: einfach weitere Blöcke in `kanaele` kopieren.
 
 ## Oberfläche
-- **Clips:** links die Ablage (Neu, Gut, Verworfen), in der Mitte das Video mit Zeitleiste, rechts der Arbeitsbereich.
-  - Die Zeitleiste zeigt das Hook-Fenster (erste 2,5 s) und die **Pointe** (wo der Chat ausgeschlagen hat).
-  - **Hook:** tippen oder einen Vorschlag übernehmen. Die Vorschau erscheint sofort im Video, „Einbauen“ brennt ihn ein.
-  - **Caption:** Titel, Beschreibung und Hashtags zum Kopieren. Nutzt auch einen getippten, noch nicht eingebauten Hook.
-  - **Posten:** Checkliste, Video laden, YouTube-Link eintragen.
-  - Bei Kampagnen-Clips läuft ein Countdown bis zur Einreichfrist (z. B. Clix: 30 Minuten).
-  - Die drei Striche unter jedem Clip zeigen den Fortschritt: Hook, Caption kopiert, online.
-- **Tastenkürzel:** `G` gut, `W` weg, `↑`/`↓` Clip wechseln, `Leertaste` Play/Pause, `←`/`→` eine Sekunde, `M` Ton.
-- **Kanäle:** Kanäle hinzufügen und entfernen (ohne Nachweis bei fremden Kanälen geht es nicht), Clip-Länge 15 bis 20 s, Watcher starten/stoppen.
+Links die Seitenleiste (auf dem Handy unten), unten links die Watcher-Karte (aus, bereit, REC) und die Version.
+- **Übersicht:** was gerade los ist. Kennzahlen, Kampagnen-Clips mit laufender Frist, Clips zum Sichten, beste Shorts, Kanäle, Aktivität. Solange etwas fehlt, steht dort die Einrichtung (Kanal, Watcher, API-Schlüssel, Google-Konto, erster Link).
+- **Clips:** der Schnittplatz. Links Neu/Gut/Verworfen, in der Mitte das Video mit Zeitleiste (Hook-Fenster und Pointe), rechts Hook, Caption und Posten. Hook-Vorschau erscheint beim Tippen im Video.
+- **Tracker:** Aufrufe pro Short als Balken, Tabelle, Auswertung nach Hook-Typ und Länge.
+- **Trends:** Muster aus aktuellen GTA-6-Shorts.
+- **Kanäle:** überwachte Kanäle mit Live-Status, Kanal hinzufügen (fremde nur mit Nachweis), Watcher starten/stoppen.
+- **Einstellungen:** Clip-Auswahl, Clip-Länge, Speicher, Benachrichtigungen (Desktop-Meldung und Ton bei neuem Clip), YouTube-Daten (API-Schlüssel), YouTube-Konto und Upload, Programm-Version und Update.
 - **Protokoll:** was der Watcher gerade macht.
+- **Tastenkürzel:** `?` zeigt alle. `G` gut, `W` weg, `↑`/`↓` Clip wechseln, `Leertaste` Play/Pause, `←`/`→` eine Sekunde, `M` Ton.
 - Nur den Watcher ohne Oberfläche: `python watcher.py`.
 
 ## Ergebnis
