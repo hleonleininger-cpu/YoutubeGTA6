@@ -19,10 +19,11 @@ Mehrere Kanäle: einfach weitere Blöcke in `kanaele` kopieren.
 Links die Seitenleiste (auf dem Handy unten), unten links die Watcher-Karte (aus, bereit, REC) und die Version.
 - **Übersicht:** was gerade los ist. Kennzahlen, Kampagnen-Clips mit laufender Frist, Clips zum Sichten, beste Shorts, Kanäle, Aktivität. Solange etwas fehlt, steht dort die Einrichtung (Kanal, Watcher, API-Schlüssel, Google-Konto, erster Link).
 - **Clips:** der Schnittplatz. Links Neu/Gut/Verworfen, in der Mitte das Video mit Zeitleiste (Hook-Fenster und Pointe), rechts Hook, Caption und Posten. Hook-Vorschau erscheint beim Tippen im Video.
+- **Entdecken:** welche Twitch-Streams gerade live sind (Sprache, Kategorie, Mindest-Zuschauer), sortiert nach Clip-Potenzial. „Grundlage prüfen“ sucht im Profiltext, Titel und in den Tags nach Hinweisen auf eine Clip-Erlaubnis. Das ist nur ein Hinweis: Du prüfst selbst, trägst den Nachweis ein, bestätigst und übernimmst den Kanal. Ohne Nachweis und Bestätigung geht es nicht. Braucht einen kostenlosen Twitch-Zugang (Einstellungen → Twitch-Zugang). YouTube Live ist nur zur Ansicht.
 - **Tracker:** Aufrufe pro Short als Balken, Tabelle, Auswertung nach Hook-Typ und Länge.
 - **Trends:** Muster aus aktuellen GTA-6-Shorts.
 - **Kanäle:** überwachte Kanäle mit Live-Status, Kanal hinzufügen (fremde nur mit Nachweis), Watcher starten/stoppen.
-- **Einstellungen:** Clip-Auswahl, Clip-Länge, Speicher, Benachrichtigungen (Desktop-Meldung und Ton bei neuem Clip), YouTube-Daten (API-Schlüssel), YouTube-Konto und Upload, Programm-Version und Update.
+- **Einstellungen:** Clip-Auswahl, Clip-Länge, Speicher, Aussehen (vier Farbstile), Benachrichtigungen (Desktop-Meldung und Ton bei neuem Clip), Twitch-Zugang, YouTube-Daten (API-Schlüssel), YouTube-Konto und Upload, Programm-Version und Update.
 - **Protokoll:** was der Watcher gerade macht.
 - **Tastenkürzel:** `?` zeigt alle. `G` gut, `W` weg, `↑`/`↓` Clip wechseln, `Leertaste` Play/Pause, `←`/`→` eine Sekunde, `M` Ton.
 - Nur den Watcher ohne Oberfläche: `python watcher.py`.

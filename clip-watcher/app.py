@@ -11,7 +11,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-import aktualisieren, caption, konto, tracker, trend, wartung
+import aktualisieren, caption, entdecken, konto, tracker, trend, wartung
 
 BASIS = Path(__file__).resolve().parent
 CLIPS = BASIS / "clips"
@@ -97,6 +97,9 @@ def config_oeffentlich():
     cfg = lade_config()
     cfg["youtube_api_key_gesetzt"] = bool(trend.schluessel(cfg))
     cfg.pop("youtube_api_key", None)
+    cfg["twitch_gesetzt"] = all(entdecken.zugang(cfg))
+    cfg.pop("twitch_client_id", None)
+    cfg.pop("twitch_client_secret", None)
     return cfg
 
 
@@ -199,20 +202,25 @@ HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <title>clip-watcher</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
-/* Layout: Schnittplatz. Ablage links, Sichtgerät mit eigener Zeitleiste in der Mitte, Arbeitsbereich rechts.
-   Farben aus der Vice-City-Nacht: indigofarbene Neutraltöne, Koralle markiert Hook und Pointe, Aqua markiert Abspielkopf und Auswahl. */
+/* Layout: Seitenleiste links, Inhalt rechts. Farbe: tiefes Violett mit Verlauf aus zwei Leuchtfarben (Stil wählbar).
+   a1/a2 = Hauptverlauf (Aktionen, Hook, REC), b1 = Gegenfarbe (Auswahl, Abspielkopf), b2 = Tiefe im Hintergrund. */
 :root{
-  --nacht:#100f17;--deck:#16141f;--deck2:#1d1a28;--deck3:#262234;--deck4:#302b41;
-  --rule:rgba(190,175,255,.075);--rule2:rgba(190,175,255,.14);--rule3:rgba(190,175,255,.24);
-  --ink:#f1eef9;--ink2:#a7a0bb;--ink3:#6f6985;
-  --koralle:#ff6b8b;--koralle2:#ff8ea8;--koralleT:rgba(255,107,139,.14);
-  --aqua:#4fd6c8;--aquaT:rgba(79,214,200,.14);
-  --gut:#63dba5;--gutT:rgba(99,219,165,.12);--weg:#ff7d7d;--wegT:rgba(255,125,125,.1);--bern:#ffbf5e;--bernT:rgba(255,191,94,.12);
+  --a1:#ff4f9a;--a2:#ff9a3c;--b1:#3fe0d0;--b2:#8b6bff;
+  --nacht:#0b0919;--deck:#14112b;--deck2:#1c1840;--deck3:#272256;--deck4:#352f6b;
+  --rule:rgba(168,150,255,.11);--rule2:rgba(168,150,255,.19);--rule3:rgba(168,150,255,.32);
+  --ink:#f6f3ff;--ink2:#b6aedb;--ink3:#7f78ab;
+  --koralle:var(--a1);--koralle2:color-mix(in srgb,var(--a1) 62%,#fff);--koralleT:color-mix(in srgb,var(--a1) 17%,transparent);
+  --aqua:var(--b1);--aquaT:color-mix(in srgb,var(--b1) 15%,transparent);
+  --grad:linear-gradient(120deg,var(--a1),var(--a2));--grad2:linear-gradient(120deg,var(--b2),var(--b1));
+  --gut:#5fe3a4;--gutT:rgba(95,227,164,.14);--weg:#ff7a85;--wegT:rgba(255,122,133,.12);--bern:#ffc25e;--bernT:rgba(255,194,94,.14);
   --f-disp:"Space Grotesk","Segoe UI",system-ui,sans-serif;
   --f-text:Inter,"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
   --f-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
   color-scheme:dark;
 }
+:root[data-farbe=neon]{--a1:#c14dff;--a2:#4d7cff;--b1:#22e3ff;--b2:#7a4dff}
+:root[data-farbe=sunset]{--a1:#ff6a3d;--a2:#ffc93c;--b1:#ff4f9a;--b2:#b04dff}
+:root[data-farbe=ozean]{--a1:#4f8cff;--a2:#3fe0d0;--b1:#ffd166;--b2:#3d5afe}
 *{box-sizing:border-box}
 html,body{height:100%}
 body{margin:0;display:flex;flex-direction:column;overflow:hidden;background:var(--nacht);color:var(--ink);font:14px/1.5 var(--f-text);-webkit-font-smoothing:antialiased;font-feature-settings:"cv11","ss01"}
@@ -626,12 +634,113 @@ ul.regeln{margin:10px 0;padding-left:18px;color:var(--ink2)}
   .kachel{flex:none;width:112px;scroll-snap-align:start}
   h1{font-size:23px}
 }
+
+/* ---------- Farbe und Leben (überschreibt die ruhigen Grundwerte oben) ---------- */
+body{background:
+  radial-gradient(900px 520px at 6% -8%,color-mix(in srgb,var(--a1) 20%,transparent),transparent 62%),
+  radial-gradient(820px 520px at 100% 0%,color-mix(in srgb,var(--b2) 24%,transparent),transparent 62%),
+  radial-gradient(760px 560px at 55% 112%,color-mix(in srgb,var(--b1) 11%,transparent),transparent 62%),
+  var(--nacht);background-attachment:fixed}
+.side{background:linear-gradient(180deg,color-mix(in srgb,var(--b2) 13%,var(--deck)),var(--deck) 55%)}
+.logo{background:var(--grad);color:#fff;box-shadow:0 8px 22px -6px color-mix(in srgb,var(--a1) 70%,transparent)}
+#tabs button.akt{background:linear-gradient(90deg,color-mix(in srgb,var(--a1) 22%,transparent),color-mix(in srgb,var(--b2) 12%,transparent));box-shadow:inset 2px 0 0 var(--a1)}
+#tabs button.akt svg{color:var(--a2)}
+#tabs .zahl,#mnav .zahl{background:var(--grad);color:#1b0a14}
+.karte,.box{background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 90px),var(--deck);border-color:var(--rule2);box-shadow:0 10px 30px -18px rgba(0,0,0,.7)}
+h1{background:linear-gradient(100deg,#fff 30%,color-mix(in srgb,var(--a2) 55%,#fff));-webkit-background-clip:text;background-clip:text;color:transparent}
+.btn.pri{background:var(--grad);border-color:transparent;color:#1b0a14;font-weight:700;box-shadow:0 8px 22px -10px color-mix(in srgb,var(--a1) 80%,transparent)}
+.btn.pri:hover{background:var(--grad);filter:brightness(1.1);border-color:transparent}
+.btn.pri:disabled{filter:grayscale(.6)}
+.update{background:linear-gradient(90deg,color-mix(in srgb,var(--b1) 16%,transparent),color-mix(in srgb,var(--b2) 14%,transparent));border-color:color-mix(in srgb,var(--b1) 38%,transparent)}
+.update .btn.pri{background:var(--grad2);color:#06141a}
+.kpi{position:relative;overflow:hidden;background:linear-gradient(160deg,color-mix(in srgb,var(--k,var(--a1)) 16%,var(--deck)),var(--deck) 70%);border-color:color-mix(in srgb,var(--k,var(--a1)) 28%,var(--rule2))}
+.kpi::after{content:"";position:absolute;right:-30px;top:-30px;width:110px;height:110px;border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--k,var(--a1)) 38%,transparent),transparent)}
+.kpi b{background:linear-gradient(100deg,#fff,color-mix(in srgb,var(--k,var(--a1)) 50%,#fff));-webkit-background-clip:text;background-clip:text;color:transparent}
+.kpi .ki{position:absolute;right:14px;top:14px;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:var(--k,var(--a1));background:color-mix(in srgb,var(--k,var(--a1)) 18%,transparent);z-index:1}
+.kpis .kpi:nth-child(1){--k:var(--a1)}.kpis .kpi:nth-child(2){--k:var(--b2)}.kpis .kpi:nth-child(3){--k:var(--gut)}.kpis .kpi:nth-child(4){--k:var(--a2)}
+.pbar i,.bb i{background:var(--grad2)}
+.bz:first-child .bb i{background:var(--grad)}
+.ava{color:#fff;background:linear-gradient(135deg,var(--b2),var(--a1))}
+.ava.on{box-shadow:0 0 0 2px var(--koralle),0 0 16px color-mix(in srgb,var(--a1) 55%,transparent)}
+.pill.koralle,.pill.acc{background:var(--koralleT);color:var(--koralle2)}
+.tag{background:color-mix(in srgb,var(--b2) 20%,transparent);color:color-mix(in srgb,var(--b2) 40%,#fff)}
+.filter button.akt,.seg button.akt{background:linear-gradient(135deg,color-mix(in srgb,var(--a1) 28%,var(--deck3)),color-mix(in srgb,var(--b2) 28%,var(--deck3)))}
+.stepper button.akt::after{background:var(--grad);height:3px}
+.stepper .hak.an,.schrittliste li.ok .hak{background:var(--grad2);border-color:transparent;color:#06141a}
+.sw{background:var(--deck4)}.schalter input:checked+.sw{background:var(--grad2)}
+.auswahl button.an,.typ.an{background:linear-gradient(135deg,color-mix(in srgb,var(--b1) 16%,transparent),color-mix(in srgb,var(--b2) 16%,transparent))}
+.typ.an{border-color:color-mix(in srgb,var(--b1) 55%,transparent);color:var(--b1)}
+.sprung a:hover{border-color:var(--a1)}
+.item.akt{background:linear-gradient(90deg,color-mix(in srgb,var(--a1) 16%,var(--deck3)),var(--deck3))}
+.sicht{background:radial-gradient(80% 70% at 50% 30%,color-mix(in srgb,var(--b2) 22%,var(--deck)) 0%,var(--nacht) 100%)}
+.leiste .fort{background:var(--grad2)}.leiste .kopf{background:#fff;box-shadow:0 0 0 4px color-mix(in srgb,var(--b1) 35%,transparent)}
+.tbtn.play{background:var(--grad);border-color:transparent;color:#1b0a14}
+.logo svg{filter:drop-shadow(0 1px 2px rgba(0,0,0,.25))}
+.setup{background:linear-gradient(160deg,color-mix(in srgb,var(--b1) 12%,var(--deck)),var(--deck) 65%)}
+.feed .aus .fi{background:var(--koralleT);color:var(--a1)}
+.wk.rec{background:linear-gradient(90deg,color-mix(in srgb,var(--a1) 22%,var(--deck2)),var(--deck2))}
+.farben{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.farben button{display:flex;align-items:center;gap:10px;padding:12px;border-radius:12px;border:1px solid var(--rule2);background:var(--deck2);color:var(--ink);font:inherit;text-align:left}
+.farben button:hover{border-color:var(--rule3)}
+.farben button.an{border-color:var(--b1);box-shadow:0 0 0 1px var(--b1)}
+.swatch{width:34px;height:34px;border-radius:10px;flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+
+/* ---------- Entdecken ---------- */
+.ent-filter{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;padding:14px 16px;border-radius:16px;border:1px solid var(--rule2);background:var(--deck)}
+.ent-filter label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:500;color:var(--ink2);min-width:140px}
+.ent-filter label:has(#ekat){flex:1;min-width:200px}
+.ent-seg{min-width:200px}
+.ent-info{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:var(--ink2);margin:0 2px 12px}
+.ent-info b{color:var(--ink)}
+.ent-liste{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px;align-items:start}
+.ent-karte{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;border:1px solid var(--rule2);background:var(--deck);box-shadow:0 12px 30px -18px rgba(0,0,0,.8);transition:border-color .15s,transform .15s}
+.ent-karte:hover{border-color:var(--rule3);transform:translateY(-2px)}
+.ent-karte.skel{height:340px;background:linear-gradient(100deg,var(--deck) 30%,var(--deck2) 50%,var(--deck) 70%);background-size:200% 100%;animation:skel 1.4s infinite}
+@keyframes skel{to{background-position:-200% 0}}
+.eb{position:relative;aspect-ratio:16/9;background:var(--deck3);overflow:hidden}
+.eb img{width:100%;height:100%;object-fit:cover;display:block}
+.eb .live{position:absolute;left:10px;top:10px;font:700 10.5px/1 var(--f-mono);letter-spacing:.1em;padding:5px 7px;border-radius:5px;background:var(--grad);color:#1b0a14}
+.eb .zus{position:absolute;right:10px;bottom:10px;font-size:12px;padding:4px 8px;border-radius:6px;background:rgba(11,9,25,.82);backdrop-filter:blur(4px)}
+.eb .zus::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--a1);margin-right:6px;vertical-align:1px}
+.ei{padding:14px 16px 16px;display:flex;flex-direction:column;gap:10px}
+.ek{display:flex;align-items:center;gap:10px}
+.klein-ava{width:34px;height:34px;font-size:14px;color:#fff}
+.et{margin:0;font-size:13.5px;line-height:1.4;color:var(--ink);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pot{display:flex;align-items:center;gap:10px}
+.pot .pb{flex:1;height:7px;border-radius:4px;background:var(--deck3);overflow:hidden}
+.pot .pb i{display:block;height:100%;border-radius:4px;background:var(--grad)}
+.pot.mittel .pb i{background:linear-gradient(120deg,var(--bern),var(--a2))}
+.pot.niedrig .pb i{background:var(--ink3)}
+.pot b{font-size:12.5px;min-width:24px;text-align:right}
+.ea{display:flex;gap:8px;flex-wrap:wrap}
+.gpanel{border-top:1px solid var(--rule);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.gkopf{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px}
+.gkopf a{font-size:12.5px}
+.treffer{margin:0;padding:9px 11px;border-radius:10px;background:var(--deck2);border-left:3px solid var(--b1);font-size:12.5px;line-height:1.5;color:var(--ink)}
+.treffer span{display:block;font:600 10.5px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--b1);margin-bottom:4px}
+.warnbox{padding:9px 12px;border-radius:10px;background:var(--bernT);border:1px solid color-mix(in srgb,var(--bern) 32%,transparent);color:#ffe3b0;font-size:12.5px;line-height:1.45}
+.vorlage{margin:8px 0 0;padding:10px 12px;border-radius:10px;background:var(--deck2);font-size:13px;user-select:all}
+.gl{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:500;color:var(--ink2)}
+.gl textarea{min-height:70px;font:13px/1.5 var(--f-text)}
+.check.ein{border:0;padding:4px 0;font-size:13px}
+@media(max-width:640px){.ent-liste{grid-template-columns:1fr}.ent-filter label{min-width:calc(50% - 6px);flex:1}.ent-seg{min-width:100%}}
+
+.seg{display:flex;padding:3px;background:var(--nacht);border:1px solid var(--rule);border-radius:11px;gap:2px}
+.seg button{flex:1;padding:9px 12px;background:none;border:0;border-radius:8px;color:var(--ink2);font-weight:500;transition:background .12s,color .12s}
+.seg button:hover{color:var(--ink)}
+.eb .ph{position:absolute;inset:0;display:grid;place-items:center;font:700 54px/1 var(--f-disp);color:rgba(255,255,255,.9);background:linear-gradient(135deg,var(--b2),var(--a1))}
+.ea .pill{padding:7px 12px;font-size:12.5px}
+.eb img{position:relative;z-index:1}
+.eb .live,.eb .zus{z-index:2}
+.ent-seg button{white-space:nowrap}
+.ent-seg{min-width:230px}
 </style></head><body>
 <div class="app"><aside class="side"><div class="brand"><span class="logo"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 5.2v13.6L19 12z"/></svg></span>clip-watcher</div>
 <nav id="tabs" aria-label="Hauptnavigation"></nav><div class="sfuss"><div id="stat"></div><footer id="fuss" class="fuss"></footer></div></aside>
 <div class="haupt"><div id="banner" class="band"></div><div id="upd" class="band"></div><main id="main"></main></div></div>
 <nav id="mnav" aria-label="Navigation"></nav><div id="toast" role="status" aria-live="polite"></div><div id="hilfe" hidden></div>
 <script>
+try{const f=localStorage.getItem('cw_farbe');if(f)document.documentElement.dataset.farbe=f}catch(e){}
 let tab='start',bekannt=null,filter='neu',clips=[],cfg=null,st={},kontoSt={},sel=null,sig='',neuWartet=false,autoplay=false;
 let pane={},caps={},hv={},hookE={},busy={},ups={},check={},hookV={};
 let stumm=false;try{stumm=localStorage.getItem('cw_stumm')=='1'}catch(e){}
@@ -642,7 +751,7 @@ const P={play:'<path d="M8 5.2v13.6L19 12z"/>',pause:'<rect x="6.5" y="5" width=
  laut:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/>',stumm:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
  check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
  down:'<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/>',film:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
- blitz:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',minus:'<path d="M6 12h12"/>',punkt:'<circle cx="12" cy="12" r="3" fill="currentColor"/>',
+ blitz:'<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',up:'<path d="M12 19V6m0 0-5 5m5-5 5 5M5 3.5h14"/>',auge:'<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',minus:'<path d="M6 12h12"/>',punkt:'<circle cx="12" cy="12" r="3" fill="currentColor"/>',
  radar:'<circle cx="12" cy="12" r="2"/><path d="M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M5 19a10 10 0 0 1 0-14M19 5a10 10 0 0 1 0 14"/>'};
 const TYPEN=['Frage','Zahl','Schock','Reaktion','Zitat'];
 const CHECKS=['Kein Spoiler, keine Zwischensequenz allein','Kein Leak, keine laute Musik im Hintergrund','Hook und Untertitel sind drin','Bei Kampagne: „Werbung“ sichtbar, Pflichtangaben drin'];
@@ -841,15 +950,17 @@ setInterval(tick,15000);
 /* ---------- Navigation: Seitenleiste und Handy-Leiste ---------- */
 const NAV=[['start','Übersicht','<path d="M4 11.5 12 5l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/>'],
  ['clips','Clips','<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>'],
+ ['entdecken','Entdecken','<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'],
  ['tracker','Tracker','<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'],
  ['trends','Trends','<path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/>'],
  ['kanaele','Kanäle','<rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M8 2.5 12 6l4-3.5"/>'],
  ['einstellungen','Einstellungen','<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'],
  ['log','Protokoll','<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>']];
+const KURZ={start:'Start',clips:'Clips',entdecken:'Finden',tracker:'Tracker',trends:'Trends',kanaele:'Kanäle',einstellungen:'Mehr',log:'Log'};
 function tabs(){const n=clips.filter(c=>c.status=='neu').length;
- const btn=([k,t,ic],mob)=>`<button class="${tab==k?'akt':''}" onclick="geheZu('${k}')" ${tab==k?'aria-current="page"':''}>${sv(ic,mob?20:18)}<span>${t}</span>${k=='clips'&&n?`<span class="zahl">${n}</span>`:''}</button>`;
- $('#tabs').innerHTML=NAV.slice(0,6).map(x=>btn(x)).join('')+'<span class="trenn"></span>'+btn(NAV[6]);
- $('#mnav').innerHTML=NAV.slice(0,6).map(x=>btn(x,1)).join('')}
+ const btn=([k,t,ic],mob)=>`<button class="${tab==k?'akt':''}" onclick="geheZu('${k}')" ${tab==k?'aria-current="page"':''}>${sv(ic,mob?20:18)}<span>${mob?KURZ[k]:t}</span>${k=='clips'&&n?`<span class="zahl">${n}</span>`:''}</button>`;
+ $('#tabs').innerHTML=NAV.slice(0,7).map(x=>btn(x)).join('')+'<span class="trenn"></span>'+btn(NAV[7]);
+ $('#mnav').innerHTML=NAV.slice(0,7).map(x=>btn(x,1)).join('')}
 function geheZu(k){tab=k;render();const m=$('#main');if(m)m.scrollTop=0;window.scrollTo(0,0)}
 function oeffneClip(id){const c=clips.find(x=>x.id==id);if(!c)return;filter=c.status;sel=id;autoplay=true;tab='clips';render()}
 
@@ -858,6 +969,7 @@ function render(){tabs();const m=$('#main');
  if(tab=='start'){m.innerHTML=startHtml();tick();if(Date.now()-startZeit>20000)ladeStartDaten();return}
  if(tab=='kanaele'&&cfg){m.innerHTML=seite('Kanäle','Die Twitch-Kanäle, die der Watcher überwacht. Fremde Kanäle nur mit Nachweis.',kanaeleHtml(),watcherKnopf());return}
  if(tab=='einstellungen'&&cfg){m.innerHTML=seite('Einstellungen','Alles, was du an clip-watcher einstellen kannst, an einem Ort.',einstellungenHtml());if(!wa.regeln)ladeWartung();return}
+ if(tab=='entdecken'){m.innerHTML=entdeckenSeite();if(!ent.daten&&!ent.laedt&&entBereit())entLaden();return}
  if(tab=='trends'){api('/api/trend').then(r=>{if(tab=='trends')m.innerHTML=seite('Trends','GTA-6-Shorts der letzten 72 Stunden aus Deutschland, sortiert nach Aufrufen pro Stunde. Zum Lernen von Mustern, nicht zum Kopieren.',trendSeite(r),r.schluessel?'<button class="btn" onclick="trendNeu()">Jetzt abrufen</button>':'')});return}
  if(tab=='tracker'){api('/api/tracker').then(r=>{if(tab=='tracker')m.innerHTML=seite('Tracker','Wie deine hochgeladenen Shorts laufen. Den YouTube-Link trägst du beim Clip unter „Posten“ ein.',trackerSeite(r),r.schluessel?'<button class="btn" onclick="trackerNeu()">Jetzt aktualisieren</button>':'')});return}
  if(tab=='log'){api('/api/log').then(r=>{if(tab!='log')return;m.innerHTML=seite('Protokoll','Was der Watcher gerade tut. Die neuesten Zeilen stehen unten.','<pre class="log">'+logHtml(r.log)+'</pre>');m.scrollTop=m.scrollHeight})}}
@@ -879,7 +991,8 @@ function startHtml(){const neu=clips.filter(c=>c.status=='neu'),live=st.aufnahme
   !st.laeuft?'der Watcher ist aus':live.length?`<b>${live.length} ${live.length==1?'Kanal':'Kanäle'} live</b>`:'gerade ist kein Kanal live'].join(', ')+'.';
  const e=einrichtung(),fertig=e.filter(x=>x[1]).length;
  const fristen=clips.filter(c=>fristEnde(c)&&fristEnde(c)>Date.now()).sort((a,b)=>fristEnde(a)-fristEnde(b));
- const kpi=(wert,titel,sub,ziel)=>`<button class="kpi" ${ziel?`onclick="${ziel}"`:'disabled'}><span class="kt">${titel}</span><b>${wert}</b><span class="ks">${sub||''}</span></button>`;
+ const KI={'Zu sichten':P.film,'Heute geschnitten':P.blitz,'Hochgeladen':P.up,'Aufrufe':P.auge};
+ const kpi=(wert,titel,sub,ziel)=>`<button class="kpi" ${ziel?`onclick="${ziel}"`:'disabled'}><span class="ki">${sv(KI[titel]||P.punkt,16)}</span><span class="kt">${titel}</span><b>${wert}</b><span class="ks">${sub||''}</span></button>`;
  const aelteste=neu.length?Math.round((Date.now()-Math.min(...neu.map(c=>c.zeit_ts||Date.now())))/60000):0;
  return `<div class="seite breit"><div class="skopf"><div><h1>${gruss()}</h1><p class="satz">${satz}</p></div>${neu.length?`<div class="sakt"><button class="btn pri" onclick="filter='neu';geheZu('clips')">Clips sichten</button></div>`:''}</div>
  <div class="kpis">${kpi(neu.length,'Zu sichten',neu.length?`ältester vor ${aelteste<60?aelteste+' Min':Math.round(aelteste/60)+' Std'}`:'nichts offen',"filter='neu';geheZu('clips')")}
@@ -902,7 +1015,7 @@ function besteHtml(T){if(!T)return '<div class="leise">Lädt …</div>';const z=
  const max=Math.max(...z.map(x=>x.aufrufe),1);return `<div class="balken">${z.map(x=>`<div class="bz"><span class="bl"><b>${esc(x.quelle)}</b> <span class="mono">${esc((x.clip.split('_').pop()||'').replace(/^(..)(..).*/,'$1:$2'))}</span></span><span class="bb"><i style="width:${Math.max(2,x.aufrufe/max*100)}%"></i></span><span class="bw mono">${zahl(x.aufrufe)}</span></div>`).join('')}</div>`}
 function liveHtml(){const live=st.aufnahme||[],k=(cfg&&cfg.kanaele)||[];if(!k.length)return '<div class="leise">Noch kein Kanal eingetragen.</div>';
  return `<div class="kliste">${k.slice().sort((a,b)=>live.includes(b.name)-live.includes(a.name)).map(x=>{const on=live.includes(x.name),n=clips.filter(c=>c.quelle==x.name&&heute(c)).length;
-  return `<div class="kl"><span class="ava ${on?'on':''}">${esc(x.name.slice(0,1).toUpperCase())}</span><span class="zt"><b>${esc(x.name)}</b><span>${on?'<span class="rec">REC</span> Aufnahme läuft':'offline'}</span></span><span class="mono klein">${n} heute</span></div>`}).join('')}</div>`}
+  return `<div class="kl"><span class="ava ${on?'on':''}" style="${avatarStil(x.name)}">${esc(x.name.slice(0,1).toUpperCase())}</span><span class="zt"><b>${esc(x.name)}</b><span>${on?'<span class="rec">REC</span> Aufnahme läuft':'offline'}</span></span><span class="mono klein">${n} heute</span></div>`}).join('')}</div>`}
 function ereignisse(){return (logTxt||'').split('\\n').filter(z=>z.startsWith('[')).slice(-60).map(z=>{const zeit=z.slice(1,6),r=z.slice(11);const a=r.indexOf('['),b=r.indexOf(']');
  const kanal=a==0&&b>0?r.slice(1,b):'',t=a==0&&b>0?r.slice(b+2):r;let art='info',text=t;
  if(t.startsWith('Ausschlag!')){art='aus';const m=t.match(/Chat ([0-9]+) .normal ([0-9]+)/);text=m?`Ausschlag erkannt: Chat ${m[1]} statt ${m[2]}`:'Ausschlag erkannt'}
@@ -930,7 +1043,7 @@ async function watcherStop(){if(!confirm('Watcher stoppen? Laufende Aufnahmen en
 function kanaeleHtml(){const live=st.aufnahme||[],k=cfg.kanaele||[];
  return `<section class="karte"><div class="khead"><h3>Überwachte Kanäle</h3><span class="klein">${k.length} ${k.length==1?'Kanal':'Kanäle'}${live.length?`, ${live.length} live`:''}</span></div>
  ${k.length?`<div class="kliste gross">${k.map(x=>{const on=live.includes(x.name),n=clips.filter(c=>c.quelle==x.name&&heute(c)).length;
-  return `<div class="kl"><span class="ava ${on?'on':''}">${esc(x.name.slice(0,1).toUpperCase())}</span><span class="zt"><b>${esc(x.name)} <span class="tag">${esc(x.rechte)}</span></b><span class="nachweis">${esc(x.nachweis||'eigener Kanal')}</span></span>
+  return `<div class="kl"><span class="ava ${on?'on':''}" style="${avatarStil(x.name)}">${esc(x.name.slice(0,1).toUpperCase())}</span><span class="zt"><b>${esc(x.name)} <span class="tag">${esc(x.rechte)}</span></b><span class="nachweis">${esc(x.nachweis||'eigener Kanal')}</span></span>
   <span class="kmeta">${on?'<span class="pill koralle"><span class="rec">REC</span> live</span>':'<span class="pill">offline</span>'}<span class="mono klein">${n} Clips heute</span></span><button class="btn ghost weg klein-btn" onclick="loesche('${esc(x.name)}')">Entfernen</button></div>`}).join('')}</div>`:'<div class="leise">Noch kein Kanal eingetragen.</div>'}</section>
  <section class="karte"><div class="khead"><h3>Kanal hinzufügen</h3></div><div class="hinweis">Fremde Kanäle nur mit Grundlage: Kampagne oder Erlaubnis des Streamers. Trag als Nachweis den Link oder eine Notiz ein, sonst startet der Kanal nicht.</div>
  <div class="formgrid"><label>Kanalname<input id="kn" placeholder="z. B. clix (ohne twitch.tv/)" autocomplete="off"></label><label>Grundlage<select id="kr"><option value="kampagne">Kampagne</option><option value="erlaubnis">Erlaubnis</option><option value="eigen">Eigener Kanal</option></select></label>
@@ -940,11 +1053,13 @@ function kanaeleHtml(){const live=st.aufnahme||[],k=cfg.kanaele||[];
 /* ---------- Einstellungen ---------- */
 function einstellungenHtml(){const L=cfg.clip_laenge_s||18,A=cfg.auswahl||'streng';
  const abschnitt=(id,t,u,inhalt)=>`<section class="karte" id="e_${id}"><div class="khead"><div><h3>${t}</h3>${u?`<span class="klein">${u}</span>`:''}</div></div>${inhalt}</section>`;
- return `<nav class="sprung">${[['auswahl','Clip-Auswahl'],['laenge','Clip-Länge'],['speicher','Speicher'],['meldung','Benachrichtigungen'],['daten','YouTube-Daten'],['konto','YouTube-Konto'],['programm','Programm']].map(([k,t])=>`<a href="#e_${k}" onclick="document.getElementById('e_${k}').scrollIntoView({behavior:'smooth'});return false">${t}</a>`).join('')}</nav>
+ return `<nav class="sprung">${[['auswahl','Clip-Auswahl'],['laenge','Clip-Länge'],['speicher','Speicher'],['aussehen','Aussehen'],['meldung','Benachrichtigungen'],['twitch','Twitch-Zugang'],['daten','YouTube-Daten'],['konto','YouTube-Konto'],['programm','Programm']].map(([k,t])=>`<a href="#e_${k}" onclick="document.getElementById('e_${k}').scrollIntoView({behavior:'smooth'});return false">${t}</a>`).join('')}</nav>
  ${abschnitt('auswahl','Clip-Auswahl','Wie streng der Watcher ist. Gilt sofort, ohne Neustart.',`<div class="auswahl">${AUSW.map(([k,t,u])=>`<button class="${A==k?'an':''}" onclick="auswahl('${k}')"><b>${t}</b><span>${u}</span></button>`).join('')}</div>`)}
  ${abschnitt('laenge','Clip-Länge','Gilt für neue Clips. Die Pointe liegt bei etwa zwei Dritteln.',`<div class="laengen">${[15,16,17,18,19,20].map(s=>`<button class="typ ${L==s?'an':''}" onclick="laenge(${s})">${s} s</button>`).join('')}</div>`)}
  ${speicherHtml()}
+ ${abschnitt('aussehen','Aussehen','Wähl den Farbstil. Gilt nur in diesem Browser.',farbwahl())}
  ${abschnitt('meldung','Benachrichtigungen','Damit du keinen Clip verpasst, vor allem bei Kampagnen mit Frist.',meldungHtml())}
+ ${abschnitt('twitch','Twitch-Zugang','Für „Entdecken“: zeigt dir, welche Streams gerade live sind. Kostenlos, nur lesend.',twitchHtml())}
  ${abschnitt('daten','YouTube-Daten','Für Trends und die Aufrufe im Tracker. Kostenlos, 10.000 Punkte pro Tag.',keyHtml())}
  ${abschnitt('konto','YouTube-Konto','Für Durchsehrate und Wiedergabedauer deiner eigenen Shorts. Nur lesend, Upload ist aus.',kontoHtml())}
  ${abschnitt('programm','Programm','',programmHtml())}`}
@@ -983,7 +1098,7 @@ function fehltKey(was){return `<div class="hinweis zeile-h"><span>${was} braucht
 function trendSeite(r){let h=r.schluessel?'':fehltKey('Trends');if(!r.daten&&!r.schluessel)return h;return h+trendHtml(Object.assign({},r,{schluessel:true}))}
 function trackerSeite(r){const t=r.daten,w=t.woche;let h=r.schluessel?'':fehltKey('Der Tracker');if(r.fehler)h+=`<div class="warn">${esc(r.fehler)}</div>`;
  const best=t.bester,schl=t.schlechtester,mit=t.zeilen.filter(z=>z.hat_link&&z.aufrufe!=null).sort((a,b)=>b.aufrufe-a.aufrufe),max=Math.max(1,...mit.map(z=>z.aufrufe));
- const kpi=(b,t,s)=>`<div class="kpi"><span class="kt">${t}</span><b>${b}</b><span class="ks">${s||''}</span></div>`;
+ const kpi=(b,t,s)=>`<div class="kpi"><span class="ki">${sv(P.auge,16)}</span><span class="kt">${t}</span><b>${b}</b><span class="ks">${s||''}</span></div>`;
  h+=`<div class="kpis">${kpi(zahl(t.median),'Median Aufrufe',`aus ${mit.length} Shorts`)}${kpi(best?zahl(best.aufrufe):'–','Bester Short',best?esc(best.quelle):'')}${kpi(w.hochgeladen,'Hochgeladen',`letzte 7 Tage, ${zahl(w.aufrufe)} Aufrufe`)}${kpi(t.ohne_link,'Ohne Link',`von ${t.gesamt} Clips`)}</div>`;
  h+=`<section class="karte"><div class="khead"><div><h3>Aufrufe pro Short</h3><span class="klein">Stand ${t.stand?esc(t.stand.replace('T',' ').slice(0,16)):'noch nicht abgerufen'}</span></div></div>${mit.length?`<div class="balken gross">${mit.slice(0,12).map(z=>`<div class="bz"><span class="bl"><b>${esc(z.quelle)}</b> <span class="mono">${esc(z.datum.slice(0,5))}</span>${z.hook_typ?` <span class="tag">${esc(z.hook_typ)}</span>`:''}</span><span class="bb"><i style="width:${Math.max(2,z.aufrufe/max*100)}%"></i></span><span class="bw mono">${zahl(z.aufrufe)}${z.durchgesehen!=null?`<small>${z.durchgesehen} %</small>`:''}</span></div>`).join('')}</div>`:'<div class="leise">Noch keine Zahlen. Trag beim Clip unter „Posten“ den YouTube-Link ein.</div>'}</section>`;
  h+=`<section class="karte tabelle"><div class="khead"><h3>Alle Clips</h3><span class="klein">${t.gesamt} Einträge</span></div><div class="tscroll"><table><tr><th>Datum</th><th>Quelle</th><th>Clip</th><th class="z">Aufrufe</th><th class="z">Likes</th><th class="z">Komm.</th><th class="z">Durchges.</th><th>Link</th></tr>`+t.zeilen.slice().reverse().map(z=>`<tr><td class="mono">${esc(z.datum)}</td><td>${esc(z.quelle)}</td><td class="mono klein">${esc(z.clip.split('/').pop())}</td><td class="z">${zahl(z.aufrufe)}</td><td class="z">${zahl(z.likes)}</td><td class="z">${zahl(z.kommentare)}</td><td class="z">${z.durchgesehen==null?'–':z.durchgesehen+' %'}</td><td>${z.hat_link?`<a href="${esc(z.link)}" target="_blank" rel="noopener">ansehen</a>`:'<span class="klein">–</span>'}</td></tr>`).join('')+'</table></div></section>';
@@ -993,6 +1108,79 @@ function trackerSeite(r){const t=r.daten,w=t.woche;let h=r.schluessel?'':fehltKe
 function hilfe(){const h=$('#hilfe');h.innerHTML=`<div class="modal" role="dialog" aria-label="Tastenkürzel"><div class="khead"><h3>Tastenkürzel</h3><button class="btn ghost klein-btn" onclick="hilfeZu()">Schließen</button></div>
  <dl class="kuerzel">${[['G','Clip als gut markieren'],['W','Clip verwerfen'],['↑ ↓','vorheriger, nächster Clip'],['Leertaste','Play und Pause'],['← →','eine Sekunde zurück, vor'],['M','Ton an oder aus'],['?','diese Übersicht']].map(([k,t])=>`<dt>${k.split(' ').map(x=>`<kbd>${x}</kbd>`).join('')}</dt><dd>${t}</dd>`).join('')}</dl></div>`;h.hidden=false}
 function hilfeZu(){$('#hilfe').hidden=true}
+
+/* ---------- Aussehen: Farbstile ---------- */
+const FARBEN=[['vice','Vice City','#ff4f9a','#ff9a3c'],['neon','Neon','#c14dff','#22d3ee'],['sunset','Sonnenuntergang','#ff6a3d','#ffc93c'],['ozean','Ozean','#4f8cff','#3fe0d0']];
+function farbeSetzen(k){document.documentElement.dataset.farbe=k;lsSet('cw_farbe',k)}
+function farbwahl(){const a=document.documentElement.dataset.farbe||'vice';
+ return `<div class="farben">${FARBEN.map(([k,t,c1,c2])=>`<button class="${a==k?'an':''}" onclick="farbeSetzen('${k}');render()" aria-pressed="${a==k}"><span class="swatch" style="background:linear-gradient(135deg,${c1},${c2})"></span><b>${t}</b></button>`).join('')}</div>`}
+function avatarStil(name){let h=0;for(const ch of String(name))h=(h*31+ch.charCodeAt(0))%360;return `background:linear-gradient(135deg,hsl(${h} 85% 62%),hsl(${(h+45)%360} 85% 55%));color:#fff`}
+
+/* ---------- Twitch-Zugang ---------- */
+function twitchHtml(){const ok=cfg.twitch_gesetzt;
+ return `<div class="status ${ok?'gut':''}">${ok?sv(P.check,14)+'Verbunden. „Entdecken“ zeigt Live-Streams von Twitch.':'Noch nicht eingerichtet.'}</div>
+ <div class="formgrid" style="margin-top:12px"><label>Client-ID<input id="tid" placeholder="${ok?'zum Ersetzen neue ID eintragen':'30 Zeichen von dev.twitch.tv'}" autocomplete="off"></label><label>Client-Secret<input id="tsec" type="password" placeholder="${ok?'zum Ersetzen neues Secret eintragen':'Neues Secret erzeugen und kopieren'}" autocomplete="off"></label></div>
+ <div class="zeile"><button class="btn ${ok?'':'pri'}" onclick="twitchSpeichern()">Prüfen und speichern</button></div>
+ <details class="hilfe-d"><summary>So bekommst du Client-ID und Secret (5 Minuten, kostenlos)</summary><ol><li>dev.twitch.tv/console öffnen und mit deinem Twitch-Konto anmelden. Twitch verlangt dafür Zwei-Faktor-Anmeldung.</li><li>„Anwendung registrieren“ wählen. Name: z. B. <code>clip-watcher-dein-name</code>.</li><li>OAuth-Weiterleitungs-URL: <code>http://localhost</code>. Kategorie: „Application Integration“. Client-Typ: „Vertraulich“.</li><li>Erstellen, dann in der Liste auf „Verwalten“ klicken.</li><li>Die <b>Client-ID</b> kopieren. Bei „Neues Secret“ das <b>Secret</b> erzeugen und sofort kopieren (es wird nur einmal gezeigt).</li><li>Beides hier eintragen. Das Secret bleibt auf deinem PC und wird nie angezeigt.</li></ol></details>`}
+async function twitchSpeichern(){const r=await api('/api/twitchzugang',{id:$('#tid').value,secret:$('#tsec').value});if(r.fehler)return alert(r.fehler);toast('Twitch verbunden');ent.daten=null;await load({voll:true})}
+
+/* ---------- Entdecken ---------- */
+let ent={quelle:'twitch',sprache:'de',kategorie:'Grand Theft Auto VI',min:50,daten:null,laedt:false,fehler:'',gr:{}};
+function entBereit(){return ent.quelle=='youtube'?!!(cfg&&cfg.youtube_api_key_gesetzt):!!(cfg&&cfg.twitch_gesetzt)}
+async function entLaden(){ent.laedt=true;ent.fehler='';if(tab=='entdecken')render();
+ const q=new URLSearchParams({quelle:ent.quelle,sprache:ent.sprache,kategorie:ent.kategorie,min:ent.min});let r;
+ try{r=await api('/api/entdecken?'+q)}catch(e){r={fehler:'Keine Antwort von clip-watcher.'}}
+ ent.laedt=false;if(r.fehler){ent.fehler=r.fehler;ent.daten=null}else ent.daten=r;if(tab=='entdecken')render()}
+function entFilter(k,wert){ent[k]=wert;ent.daten=null;entLaden()}
+function dauerText(min){if(min==null)return '';return min<60?min+' Min':Math.floor(min/60)+':'+String(min%60).padStart(2,'0')+' Std'}
+function entdeckenSeite(){
+ const quellen=`<div class="seg ent-seg">${[['twitch','Twitch'],['youtube','YouTube Live']].map(([k,t])=>`<button class="${ent.quelle==k?'akt':''}" onclick="ent.quelle='${k}';ent.daten=null;ent.fehler='';render()">${t}</button>`).join('')}</div>`;
+ const filter=`<div class="ent-filter">${quellen}
+  <label>Sprache<select onchange="entFilter('sprache',this.value)">${[['de','Deutsch'],['en','Englisch'],['alle','Alle']].map(([k,t])=>`<option value="${k}" ${ent.sprache==k?'selected':''}>${t}</option>`).join('')}</select></label>
+  ${ent.quelle=='twitch'?`<label>Kategorie<input id="ekat" value="${esc(ent.kategorie)}" placeholder="leer = alle Kategorien" onkeydown="if(event.key=='Enter')entFilter('kategorie',this.value)" onchange="entFilter('kategorie',this.value)"></label>`:''}
+  <label>Mindestens<select onchange="entFilter('min',+this.value)">${[0,50,200,1000,5000].map(n=>`<option value="${n}" ${ent.min==n?'selected':''}>${n?n.toLocaleString('de-DE')+' Zuschauer':'egal'}</option>`).join('')}</select></label>
+  <button class="btn" onclick="ent.daten=null;entLaden()" ${ent.laedt?'disabled':''}>${ent.laedt?'Lädt …':'Aktualisieren'}</button></div>`;
+ let h=`<div class="seite breit"><div class="skopf"><div><h1>Entdecken</h1><p>Welche Streams gerade live sind und sich zum Clippen eignen. Du entscheidest, welche Kanäle überwacht werden.</p></div></div>${filter}`;
+ if(!entBereit()){h+=ent.quelle=='youtube'?fehltKey('YouTube Live'):`<section class="karte setup"><div class="khead"><h3>Twitch verbinden</h3></div><p class="klein" style="margin:0 0 12px">Dafür brauchst du einmalig einen kostenlosen Twitch-Zugang (Client-ID und Secret). Das dauert etwa 5 Minuten, die Anleitung steht in den Einstellungen.</p><div class="zeile" style="margin:0"><button class="btn pri" onclick="geheZu('einstellungen');setTimeout(()=>document.getElementById('e_twitch')&&document.getElementById('e_twitch').scrollIntoView({behavior:'smooth'}),150)">Zugang einrichten</button></div></section>`;return h+'</div>'}
+ if(ent.fehler)h+=`<div class="warn">${esc(ent.fehler)}</div>`;
+ if(ent.laedt&&!ent.daten)h+='<div class="ent-liste">'+'<div class="ent-karte skel"></div>'.repeat(6)+'</div>';
+ else if(ent.daten){const l=ent.daten.streams;
+  h+=`<div class="ent-info"><span><b>${l.length}</b> ${l.length==1?'Stream':'Streams'} live${ent.daten.kategorie?' in „'+esc(ent.daten.kategorie)+'“':''} · Stand ${esc(ent.daten.abgerufen)} Uhr</span>${ent.quelle=='youtube'?`<span>YouTube-Suchen heute: ${ent.daten.suchen_heute}/${ent.daten.max_suchen}</span>`:'<span>Sortiert nach Clip-Potenzial</span>'}</div>`;
+  if(ent.quelle=='youtube')h+='<div class="hinweis">YouTube Live ist hier nur zur Ansicht. Der Watcher kann derzeit nur Twitch-Streams clippen, weil er den Twitch-Chat für die Ausschläge liest.</div>';
+  h+=l.length?`<div class="ent-liste">${l.map(ent.quelle=='youtube'?ytKarte:twKarte).join('')}</div>`:'<div class="leer" style="padding:50px 20px"><b>Nichts gefunden</b><span>Probier eine kleinere Zuschauerzahl, eine andere Sprache oder lass die Kategorie leer.</span></div>'}
+ return h+'</div>'}
+function potBalken(p){const k=p>=75?'hoch':p>=50?'mittel':'niedrig';return `<span class="pot ${k}" title="Clip-Potenzial aus Zuschauern, Sprache, Kategorie und Laufzeit"><span class="pb"><i style="width:${p}%"></i></span><b class="mono">${p}</b></span>`}
+function twKarte(s){const g=ent.gr[s.login];
+ return `<article class="ent-karte"><div class="eb"><span class="ph">${esc((s.name||s.kanal||'?').slice(0,1).toUpperCase())}</span>${s.bild?`<img src="${esc(s.bild)}" loading="lazy" alt="" onerror="this.remove()">`:''}<span class="live">LIVE</span><span class="zus mono">${s.zuschauer.toLocaleString('de-DE')}</span></div>
+ <div class="ei"><div class="ek"><span class="ava klein-ava" style="${avatarStil(s.login)}">${esc(s.name.slice(0,1).toUpperCase())}</span><div class="zt"><b>${esc(s.name)}</b><span>${esc(s.kategorie)} · ${esc(s.sprache.toUpperCase())} · ${dauerText(s.minuten)}</span></div></div>
+ <p class="et">${esc(s.titel)}</p>${potBalken(s.potenzial)}
+ <div class="ea">${s.ueberwacht?'<span class="pill gut">wird überwacht</span>':`<button class="btn ${g&&g.offen?'':'pri'} klein-btn" onclick="grundlageOeffnen('${esc(s.login)}')">${g&&g.offen?'Schließen':'Grundlage prüfen'}</button>`}<a class="btn ghost klein-btn" href="${esc(s.link)}" target="_blank" rel="noopener">Auf Twitch ansehen</a></div>
+ ${g&&g.offen&&!s.ueberwacht?grundlagePanel(s,g):''}</div></article>`}
+function ytKarte(s){return `<article class="ent-karte"><div class="eb"><span class="ph">${esc((s.name||s.kanal||'?').slice(0,1).toUpperCase())}</span>${s.bild?`<img src="${esc(s.bild)}" loading="lazy" alt="" onerror="this.remove()">`:''}<span class="live">LIVE</span><span class="zus mono">${s.zuschauer.toLocaleString('de-DE')}</span></div>
+ <div class="ei"><div class="ek"><span class="ava klein-ava" style="${avatarStil(s.kanal)}">${esc(s.kanal.slice(0,1).toUpperCase())}</span><div class="zt"><b>${esc(s.kanal)}</b><span>${dauerText(s.minuten)}</span></div></div><p class="et">${esc(s.titel)}</p>
+ <div class="ea"><a class="btn klein-btn" href="${esc(s.link)}" target="_blank" rel="noopener">Auf YouTube ansehen</a></div></div></article>`}
+
+/* Grundlage: Hinweise suchen, dann bewusst bestätigen */
+async function grundlageOeffnen(login){const g=ent.gr[login];if(g&&g.offen){g.offen=false;return render()}
+ ent.gr[login]=Object.assign(g||{},{offen:true,laedt:!g||!g.daten});render();if(ent.gr[login].daten)return;
+ const r=await api('/api/grundlage?login='+encodeURIComponent(login));const x=ent.gr[login];x.laedt=false;
+ if(r.fehler){x.fehler=r.fehler}else{x.daten=r;x.rechte=x.rechte||'erlaubnis';
+  if(x.nachweis==null)x.nachweis=r.treffer.length?`Hinweis im ${r.treffer[0].wo} von ${r.name} (${r.link}): „${r.treffer[0].auszug}“. Selbst geprüft am ${new Date().toLocaleDateString('de-DE')}.`:''}
+ if(tab=='entdecken')render()}
+function grundlagePanel(s,g){if(g.laedt)return '<div class="gpanel"><span class="klein">Suche Hinweise …</span></div>';if(g.fehler)return `<div class="gpanel"><div class="warn" style="margin:0">${esc(g.fehler)}</div></div>`;
+ const d=g.daten,ok=g.ok&&(g.nachweis||'').trim().length>=10;
+ return `<div class="gpanel"><div class="gkopf"><b>${d.hinweis?'Hinweis gefunden':'Kein Hinweis gefunden'}</b><a href="${esc(d.link)}" target="_blank" rel="noopener">Infofelder auf Twitch lesen</a></div>
+ ${d.hinweis?d.treffer.map(t=>`<blockquote class="treffer"><span>${esc(t.wo)}</span>${esc(t.auszug)}</blockquote>`).join(''):'<p class="klein" style="margin:6px 0">Im Profiltext, Titel und in den Tags steht nichts zum Clippen. Schau auf der Twitch-Seite unter „Info“ nach, oder frag den Streamer.</p>'}
+ <div class="warnbox">Das ist nur ein Hinweis, keine Erlaubnis. Clippen und hochladen darfst du erst, wenn der Streamer es erlaubt hat oder eine Kampagne es vorsieht. Das prüfst du selbst.</div>
+ ${d.hinweis?'':`<details class="hilfe-d"><summary>Nachricht an den Streamer (zum Kopieren)</summary><p class="vorlage">Hi ${esc(d.name)}, ich schneide Highlights aus deinen Streams als Shorts, immer mit Credit auf deinen Kanal. Ist das für dich okay? Danke dir!</p></details>`}
+ <label class="gl">Grundlage<select onchange="ent.gr['${esc(s.login)}'].rechte=this.value"><option value="erlaubnis" ${g.rechte=='erlaubnis'?'selected':''}>Erlaubnis des Streamers</option><option value="kampagne" ${g.rechte=='kampagne'?'selected':''}>Clip-Kampagne</option></select></label>
+ <label class="gl">Nachweis<textarea rows="3" placeholder="Link oder Notiz: wo hat der Streamer das erlaubt?" oninput="const x=ent.gr['${esc(s.login)}'];x.nachweis=this.value;ghalt('${esc(s.login)}')">${esc(g.nachweis||'')}</textarea></label>
+ <label class="check ein"><input type="checkbox" ${g.ok?'checked':''} onchange="const x=ent.gr['${esc(s.login)}'];x.ok=this.checked;ghalt('${esc(s.login)}')"><span>Ich habe selbst geprüft, dass ich Clips dieses Kanals verwenden darf.</span></label>
+ <button class="btn pri" id="gbtn_${esc(s.login)}" ${ok?'':'disabled'} onclick="kanalUebernehmen('${esc(s.login)}')">Als Kanal übernehmen</button><span class="klein" style="margin-left:8px">Der Watcher startet dafür kurz neu.</span></div>`}
+function ghalt(login){const g=ent.gr[login],b=document.getElementById('gbtn_'+login);if(b)b.disabled=!(g.ok&&(g.nachweis||'').trim().length>=10)}
+async function kanalUebernehmen(login){const g=ent.gr[login];if(!g||!g.ok)return;
+ const r=await api('/api/kanal',{name:login,rechte:g.rechte||'erlaubnis',nachweis:(g.nachweis||'').trim()});if(r.fehler)return alert(r.fehler);
+ toast(login+' wird jetzt überwacht');delete ent.gr[login];ent.daten=null;await load({voll:true});if(tab=='entdecken')entLaden()}
 async function updateLaden(){let u;try{u=await api('/api/update')}catch(e){return}window.updInfo=u;
  $('#upd').innerHTML=u.info&&u.info.neu?`<div class="update"><span><b>Update verfügbar</b> <span class="klein">Version ${esc(u.info.kurz)} · Clips und Einstellungen bleiben erhalten</span></span><button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'');
  const v=u.info&&u.info.installiert;
@@ -1076,6 +1264,27 @@ class H(BaseHTTPRequestHandler):
             live = sorted({p.name.rsplit("_", 2)[0] for p in aufn.glob("*") if p.is_dir() and frisch(p)}) if aufn.is_dir() else []
             self._json({"laeuft": watcher_laeuft(), "aufnahme": live if watcher_laeuft() else [], "hinweis": WATCHER["hinweis"], "frei_gb": round(frei, 1),
                         "min_frei_gb": mind, "platz_warnung": frei < mind, "fehler": dict(FEHLER)})
+        elif p == "/api/entdecken":
+            q = parse_qs(urlparse(self.path).query)
+            g = lambda k, d="": q.get(k, [d])[0]
+            cfg = lade_config()
+            try:
+                mn = max(0, min(int(g("min", "50")), 100000))
+                if g("quelle", "twitch") == "youtube":
+                    r = entdecken.youtube_live(cfg, g("sprache", "de"), mn)
+                else:
+                    r = entdecken.twitch_streams(cfg, g("sprache", "de"), g("kategorie"), mn)
+                    ueb = {k["name"].lower() for k in cfg.get("kanaele", [])}
+                    for s_ in r["streams"]:
+                        s_["ueberwacht"] = s_["login"] in ueb
+                self._json(r)
+            except (trend.ApiFehler, ValueError) as e:
+                self._json({"fehler": str(e) or "Fehler"})
+        elif p == "/api/grundlage":
+            try:
+                self._json(entdecken.grundlage(lade_config(), parse_qs(urlparse(self.path).query).get("login", [""])[0]))
+            except trend.ApiFehler as e:
+                self._json({"fehler": str(e)})
         elif p == "/api/wartung":
             cfg = lade_config()
             self._json(dict(wartung.letzter_lauf(), regeln=wartung.einstellungen(cfg), frei_gb=round(wartung.frei_gb(), 1)))
@@ -1251,6 +1460,17 @@ class H(BaseHTTPRequestHandler):
                                    d.get("sichtbarkeit", "private"))
                 tracker.setze_link(d["id"], f"https://www.youtube.com/shorts/{vid}")
                 return self._json({"ok": True, "id": vid})
+            if p == "/api/twitchzugang":
+                cid, sec = str(d.get("id", "")).strip(), str(d.get("secret", "")).strip()
+                if not re.fullmatch(r"[A-Za-z0-9]{20,40}", cid) or not re.fullmatch(r"[A-Za-z0-9]{20,40}", sec):
+                    return self._json({"fehler": "Client-ID und Client-Secret bestehen aus 30 Buchstaben und Zahlen. Bitte genau kopieren."})
+                probe = {"twitch_client_id": cid, "twitch_client_secret": sec}
+                entdecken._TOKEN.update(wert="", bis=0.0)
+                entdecken._token(cid, sec)   # wirft ApiFehler, wenn Twitch den Zugang ablehnt
+                cfg = lade_config()
+                cfg.update(probe)
+                speichere_config(cfg)
+                return self._json({"ok": True})
             if p == "/api/schluessel":
                 key = str(d.get("schluessel", "")).strip()
                 if not re.fullmatch(r"[A-Za-z0-9_\-]{20,80}", key):
