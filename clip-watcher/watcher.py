@@ -40,6 +40,18 @@ def lade_config():
         return json.load(f)
 
 
+def fenster(cfg):
+    """Sekunden vor und nach dem Höhepunkt. clip_laenge_s (Standard 18) ersetzt vorlauf_s/nachlauf_s.
+    Der Höhepunkt liegt bei etwa zwei Dritteln, damit der Clip auf die Pointe zuläuft und kurz danach endet."""
+    try:
+        laenge = float(cfg.get("clip_laenge_s", 18))
+    except (TypeError, ValueError):
+        laenge = 18.0
+    laenge = min(max(laenge, 8.0), 60.0)
+    vor = round(laenge * 0.65)
+    return vor, laenge - vor
+
+
 def pruefe_rechte(rechte, nachweis):
     """Rechte vor Qualität: ohne Grundlage wird nichts aufgenommen."""
     r = str(rechte or "").strip().lower()
@@ -559,8 +571,9 @@ class Kanal(threading.Thread):
             if score >= schwelle and bis - letzter_clip >= cfg.get("pause_zwischen_clips_s", 45):
                 letzter_clip = bis
                 moment = rec.rec_zeit(von) - cfg.get("chat_verzug_s", 4)
-                rvon = max(0.0, moment - cfg.get("vorlauf_s", 18))
-                rbis = moment + cfg.get("nachlauf_s", 12)
+                vor, nach = fenster(cfg)
+                rvon = max(0.0, moment - vor)
+                rbis = moment + nach
                 log(self.name, f"Ausschlag! Chat {score:.0f} (normal {basis:.0f}) -> Clip {rvon:.0f}-{rbis:.0f} s")
                 self.jobs.put((rvon, rbis, moment - rvon,
                                f"Chat-Ausschlag {score:.0f} statt {basis:.0f} pro {fenster} s", top_woerter(nachr)))
@@ -633,12 +646,13 @@ def datei_modus(datei, rechte, nachweis, cfg):
     if not hat_ton:
         sys.exit("Die Datei hat keinen Ton, Ausschläge lassen sich so nicht finden.")
     log("datei", f"Suche Lautstärke-Spitzen in {datei.name} ({dauer / 60:.0f} min) …")
-    spitzen = lautstaerke_spitzen(datei, cfg.get("max_clips_datei", 8), cfg.get("vorlauf_s", 18) + cfg.get("nachlauf_s", 12))
+    vor, nach = fenster(cfg)
+    spitzen = lautstaerke_spitzen(datei, cfg.get("max_clips_datei", 8), vor + nach)
     if not spitzen:
         sys.exit("Keine deutlichen Spitzen gefunden.")
     for s, t in spitzen:
-        von = max(0.0, t - cfg.get("vorlauf_s", 18))
-        bis = min(dauer, t + cfg.get("nachlauf_s", 12))
+        von = max(0.0, t - vor)
+        bis = min(dauer, t + nach)
         ziel = BASIS / "clips" / datetime.now().strftime("%Y-%m-%d") / f"{datei.stem}_{int(t // 60):02d}m{int(t % 60):02d}s"
         ziel.mkdir(parents=True, exist_ok=True)
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-ss", f"{von:.2f}", "-i", str(datei), "-t", f"{bis - von:.2f}",

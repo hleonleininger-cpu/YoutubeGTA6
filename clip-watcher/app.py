@@ -121,7 +121,8 @@ def clip_liste():
         ut = "fertig" if (d / "untertitel.fertig").exists() else ("keine" if (d / "untertitel.keine").exists() else "laeuft")
         video = "short_hook.mp4" if (d / "short_hook.mp4").exists() else "short.mp4"
         out.append({"id": rel, "status": st, "video": f"/files/{rel}/{video}", "ohne_hook": f"/files/{rel}/short.mp4", "ut": ut,
-                    "link": links.get(f"clips/{rel}", ""), "hook_typ": hooktypen.get(f"clips/{rel}", ""),
+                    "link": links.get(f"clips/{rel}", ""),
+                    "vorschau": f"/files/{rel}/vorschau.jpg" if (d / "vorschau.jpg").exists() else "", "hook_typ": hooktypen.get(f"clips/{rel}", ""),
                     "srt": f"/files/{rel}/untertitel.srt" if (d / "untertitel.srt").exists() else "",
                     "hook": felder.get("Hook", ""), "quelle": felder.get("Quelle", ""),
                     "rechte": felder.get("Rechte", ""), "zeit": felder.get("Aufgenommen", ""),
@@ -180,107 +181,305 @@ HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <title>clip-watcher</title>
 <style>
 *{box-sizing:border-box}
-:root{--bg:#0c0d12;--s1:#14161e;--s2:#1c1f2b;--line:#272b3a;--txt:#eef0f6;--mut:#8b92a6;--a1:#ff4f8b;--a2:#ff9a3c;--ok:#2fbf7a;--bad:#e5484d;--grad:linear-gradient(135deg,#ff4f8b,#ff9a3c)}
-html{color-scheme:dark}body{margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(1200px 500px at 70% -10%,#2a1530 0,transparent 60%),var(--bg);color:var(--txt);line-height:1.45}
-header{position:sticky;top:0;z-index:10;background:rgba(12,13,18,.82);backdrop-filter:blur(10px);padding:12px 18px;display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--line)}
-.logo{width:30px;height:30px;border-radius:9px;background:var(--grad);display:grid;place-items:center;font-weight:800;color:#fff;font-size:15px}
-h1{font-size:18px;margin:0;flex:1;letter-spacing:.2px}
-#stat{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);background:var(--s1);border:1px solid var(--line);padding:6px 12px;border-radius:999px}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--bad);display:inline-block;box-shadow:0 0 0 3px rgba(229,72,77,.2)}.dot.an{background:var(--ok);box-shadow:0 0 0 3px rgba(47,191,122,.22)}
-nav{display:flex;gap:8px;padding:14px 18px 6px;overflow:auto;max-width:1200px;margin:auto;scrollbar-width:none}
-nav button{background:var(--s1);color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:14px;cursor:pointer;white-space:nowrap;transition:.15s}
-nav button:hover{color:var(--txt);border-color:#3a3f55}nav button.akt{background:var(--grad);color:#fff;border-color:transparent;font-weight:600}
-main{padding:10px 18px 60px;max-width:1200px;margin:auto}
-.btn{background:var(--s2);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:9px 14px;font-size:14px;cursor:pointer;text-decoration:none;display:inline-block;transition:.15s}
-.btn:hover{border-color:#454b64;background:#232738}.btn.pri{background:var(--grad);color:#fff;border-color:transparent;font-weight:600}.btn.pri:hover{filter:brightness(1.08)}
-.btn.gut{background:rgba(47,191,122,.16);color:#6fe3ad;border-color:rgba(47,191,122,.4)}.btn.weg{background:rgba(229,72,77,.12);color:#ff8f93;border-color:rgba(229,72,77,.35)}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px;margin-top:10px}
-.karte{background:var(--s1);border-radius:18px;overflow:hidden;border:1px solid var(--line);box-shadow:0 8px 30px rgba(0,0,0,.35);display:flex;flex-direction:column}
-.karte video{width:100%;aspect-ratio:9/16;background:#000;display:block;max-height:540px;object-fit:contain}
-.inh{padding:14px 16px 16px;font-size:13px}.kopf{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.kopf b{font-size:16px}
-.klein{color:var(--mut);font-size:12.5px}.zitat{margin:10px 0 4px;padding:9px 12px;background:var(--s2);border-left:3px solid var(--a1);border-radius:8px;font-style:italic}
-.hk{margin-top:8px}.hk b{color:var(--a2)}
-.aktion{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-top:12px}.aktion .btn{text-align:center;padding:11px 12px}
-details{border-top:1px solid var(--line);margin-top:12px;padding-top:2px}summary{cursor:pointer;padding:10px 0;font-weight:600;font-size:13.5px;color:var(--txt);list-style:none;display:flex;justify-content:space-between}
-summary::after{content:"+";color:var(--mut)}details[open] summary::after{content:"−"}summary::-webkit-details-marker{display:none}
-.zeile{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.zeile input{flex:1;min-width:0}
-input,select{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;width:100%}
-input:focus,textarea:focus,select:focus{outline:2px solid rgba(255,79,139,.5);border-color:transparent}
-.tag{font-size:11.5px;padding:3px 9px;border-radius:999px;background:var(--s2);color:var(--mut);border:1px solid var(--line)}
-.tag.neu{color:#ffc46b;border-color:rgba(255,154,60,.4)}.tag.gut{background:rgba(47,191,122,.15);color:#6fe3ad;border-color:rgba(47,191,122,.4)}.tag.weg{background:rgba(229,72,77,.12);color:#ff8f93;border-color:rgba(229,72,77,.35)}
-pre{background:#080910;padding:12px;border-radius:12px;font-size:12px;overflow:auto;max-height:65vh;white-space:pre-wrap;border:1px solid var(--line)}
-.box{background:var(--s1);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}
-table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left}th{color:var(--mut);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:.4px}td.z,th.z{text-align:right}tr:hover td{background:rgba(255,255,255,.02)}
-textarea{background:var(--bg);color:var(--txt);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13px;width:100%;min-height:150px;font-family:inherit}
-a{color:var(--a2)}.warn{background:rgba(229,72,77,.12);border:1px solid rgba(229,72,77,.35);border-radius:12px;padding:10px 14px;font-size:13px;margin:8px 0}
-.hinweis{background:rgba(255,154,60,.1);border:1px solid rgba(255,154,60,.3);border-radius:12px;padding:10px 14px;font-size:13px;margin:10px 0}
-.stat{display:flex;gap:12px;flex-wrap:wrap}.stat div{background:var(--s2);border:1px solid var(--line);border-radius:12px;padding:10px 16px;color:var(--mut);font-size:12.5px}.stat b{display:block;font-size:20px;color:var(--txt)}
-.leer{color:var(--mut);text-align:center;padding:70px 10px;font-size:15px}.leer::before{content:"🎬";display:block;font-size:40px;margin-bottom:8px}
-.band{max-width:1200px;margin:0 auto;padding:0 18px}
-#neuBtn{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:20}
-@media(max-width:600px){header,nav,main{padding-left:12px;padding-right:12px}.grid{grid-template-columns:1fr}}
+:root{--bg:#0b0c10;--p1:#121419;--p2:#181b22;--p3:#1f232c;--line:rgba(255,255,255,.07);--line2:rgba(255,255,255,.13);--txt:#eceef3;--mut:#8b909d;--dim:#5d6270;--acc:#ff5c8a;--acc2:#ff7aa0;--ok:#3ddc97;--bad:#ff6b6b;--warn:#ffb547}
+html{color-scheme:dark}
+body{margin:0;height:100vh;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--txt);font:14px/1.5 Inter,"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+.top{flex:none;position:relative;z-index:20;height:58px;display:flex;align-items:center;gap:22px;padding:0 20px;background:rgba(11,12,16,.86);backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;font-size:15px;letter-spacing:-.01em;white-space:nowrap}
+.logo{width:28px;height:28px;border-radius:8px;background:var(--acc);display:grid;place-items:center;color:#fff}
+#tabs{display:flex;align-items:center;gap:2px;flex:1;overflow-x:auto;scrollbar-width:none;height:100%}
+#tabs button{position:relative;height:100%;background:none;border:0;padding:0 12px;color:var(--mut);cursor:pointer;font-weight:500;white-space:nowrap;display:flex;align-items:center;gap:7px}
+#tabs button:hover{color:var(--txt)}
+#tabs button.akt{color:var(--txt)}
+#tabs button.akt::after{content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:2px;border-radius:2px;background:var(--acc)}
+.zahl{font-size:11.5px;font-variant-numeric:tabular-nums;min-width:20px;padding:1px 6px;border-radius:999px;background:var(--p3);color:var(--mut);text-align:center}
+#tabs button.akt .zahl{background:rgba(255,92,138,.16);color:var(--acc2)}
+.trenn{width:1px;height:18px;background:var(--line2);margin:0 8px;flex:none}
+#stat{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--mut);white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--bad)}
+.dot.an{background:var(--ok);animation:puls 2.2s infinite}
+@keyframes puls{0%{box-shadow:0 0 0 0 rgba(61,220,151,.45)}70%{box-shadow:0 0 0 7px rgba(61,220,151,0)}100%{box-shadow:0 0 0 0 rgba(61,220,151,0)}}
+.band{flex:none;width:100%;max-width:1480px;margin:0 auto;padding:0 20px}
+.band:empty{display:none}
+main{flex:1;min-height:0;overflow-y:auto;width:100%;max-width:1480px;margin:0 auto;padding:18px 20px 24px}
+
+.review{display:grid;grid-template-columns:290px minmax(0,1fr) 400px;gap:18px;height:100%;min-height:520px}
+.liste{overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding-right:4px}
+.listekopf{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:2px 8px 8px}
+.item{display:flex;gap:12px;align-items:stretch;text-align:left;background:transparent;border:1px solid transparent;border-radius:12px;padding:8px;cursor:pointer;transition:background .12s,border-color .12s}
+.item:hover{background:var(--p1)}
+.item.akt{background:var(--p2);border-color:var(--line2)}
+.thumb{width:48px;height:85px;flex:none;border-radius:8px;overflow:hidden;background:var(--p3);display:grid;place-items:center;color:var(--dim)}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.itxt{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1;padding-top:1px}
+.izeile{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.izeile b{font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zeit{color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums;flex:none}
+.iquote{color:var(--mut);font-size:12.5px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.imeta{display:flex;gap:4px;flex-wrap:wrap;margin-top:auto}
+
+.buehne{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:radial-gradient(70% 60% at 50% 40%,#1a1d27 0,#0e0f13 100%);border:1px solid var(--line);border-radius:20px;padding:18px;min-height:0;min-width:0}
+.buehne video{flex:1 1 0;min-height:0;height:0;width:auto;max-width:100%;aspect-ratio:9/16;border-radius:14px;background:#000;box-shadow:0 24px 70px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06)}
+.tasten{font-size:12px;color:var(--dim);display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center}
+.tasten i{font-style:normal;margin-right:8px}
+kbd{font:11px/1 ui-monospace,SFMono-Regular,Consolas,monospace;padding:3px 6px;border-radius:5px;background:var(--p3);border:1px solid var(--line2);color:var(--mut)}
+
+.panel{overflow-y:auto;background:var(--p1);border:1px solid var(--line);border-radius:20px;padding:20px}
+.pkopf{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+h2{font-size:20px;margin:0;letter-spacing:-.02em;font-weight:650}
+.meta{color:var(--mut);font-size:12.5px;margin-top:2px}
+.tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;padding-top:3px}
+blockquote{margin:16px 0 0;padding:12px 14px;background:var(--p2);border-radius:12px;font-size:14px;line-height:1.5;color:#d6d8de;border-left:2px solid var(--acc)}
+.chatzeile{margin-top:10px}
+.pill{font-size:11.5px;font-weight:500;padding:3px 9px;border-radius:999px;background:var(--p3);color:var(--mut);white-space:nowrap}
+.pill.ok{background:rgba(61,220,151,.12);color:var(--ok)}
+.pill.gelb{background:rgba(255,181,71,.12);color:var(--warn)}
+.pill.acc{background:rgba(255,92,138,.14);color:var(--acc2)}
+.entscheid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:18px 0}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;background:var(--p3);border:1px solid var(--line2);border-radius:10px;padding:9px 14px;cursor:pointer;text-decoration:none;color:var(--txt);font-weight:500;transition:background .12s,border-color .12s,transform .06s;white-space:nowrap}
+.btn:hover{background:#262a35;border-color:rgba(255,255,255,.2);text-decoration:none}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.55;cursor:default}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.pri:hover{background:var(--acc2);border-color:var(--acc2)}
+.btn.ghost{background:transparent}
+.btn.gut{color:var(--ok)}
+.btn.weg{color:var(--bad)}
+.btn.gross{padding:13px;font-size:15px;font-weight:600;border-radius:12px}
+.btn.gut.gross{background:rgba(61,220,151,.09);border-color:rgba(61,220,151,.28)}
+.btn.gut.gross:hover{background:rgba(61,220,151,.17)}
+.btn.weg.gross{background:rgba(255,107,107,.07);border-color:rgba(255,107,107,.26)}
+.btn.weg.gross:hover{background:rgba(255,107,107,.14)}
+.btn.gross kbd{margin-left:4px;background:rgba(0,0,0,.28);border-color:transparent;color:inherit;opacity:.75}
+.btn.an{box-shadow:inset 0 0 0 1.5px currentColor}
+
+.seg{display:flex;padding:3px;background:var(--bg);border:1px solid var(--line);border-radius:11px;gap:2px}
+.seg button{flex:1;padding:8px;background:none;border:0;border-radius:8px;color:var(--mut);cursor:pointer;font-weight:500;transition:.12s}
+.seg button:hover{color:var(--txt)}
+.seg button.akt{background:var(--p3);color:var(--txt);box-shadow:0 1px 2px rgba(0,0,0,.4)}
+.lbl{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mut);margin:20px 0 8px}
+.lbl span{text-transform:none;letter-spacing:0;font-weight:400;color:var(--dim)}
+.feld{display:flex;gap:8px}
+.feld input{flex:1;min-width:0}
+input,select,textarea{background:var(--bg);border:1px solid var(--line2);border-radius:10px;padding:10px 12px;width:100%;transition:border-color .12s,box-shadow .12s}
+input::placeholder,textarea::placeholder{color:var(--dim)}
+input[type=checkbox]{width:16px;height:16px;padding:0;margin:0 8px 0 0;accent-color:var(--acc);vertical-align:-3px;box-shadow:none}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(255,92,138,.18)}
+textarea{font:12.5px/1.6 ui-monospace,SFMono-Regular,Consolas,monospace;resize:vertical;min-height:120px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--p2);border:1px solid var(--line2);border-radius:999px;padding:6px 12px;cursor:pointer;font-size:13px;color:#d6d8de;transition:.12s;text-align:left}
+.chip:hover{border-color:var(--acc);color:#fff}
+.chip.an{background:rgba(255,92,138,.15);border-color:var(--acc);color:#fff}
+.chip.mini{padding:2px 8px;font-size:11.5px;cursor:default;color:var(--mut)}
+.chip.mini:hover{border-color:var(--line2);color:var(--mut)}
+.checks{display:flex;flex-direction:column;gap:2px}
+.check{display:flex;gap:10px;align-items:center;padding:7px 10px;border-radius:9px;cursor:pointer;font-size:13.5px}
+.check:hover{background:var(--p2)}
+.check input{width:16px;height:16px;accent-color:var(--acc);margin:0;flex:none;padding:0}
+.check input:checked+span{color:var(--dim);text-decoration:line-through}
+.capkopf{display:flex;justify-content:space-between;align-items:center;margin:18px 0 8px}
+.rot{color:var(--bad)}
+.leise{color:var(--dim);font-size:12.5px;margin-top:8px}
+
+.seite{max-width:1100px;margin:0 auto}
+.box{background:var(--p1);border:1px solid var(--line);border-radius:16px;padding:18px 20px;margin-bottom:14px}
+.box>b:first-child{display:block;font-size:15px;font-weight:600;margin-bottom:6px}
+.zeile{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.zeile input{flex:1;min-width:180px}
+.klein{color:var(--mut);font-size:12.5px}
+.tag{font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--p3);color:var(--mut)}
+.tag.gut{background:rgba(61,220,151,.12);color:var(--ok)}
+.hinweis{background:rgba(255,181,71,.07);border:1px solid rgba(255,181,71,.22);color:#f1dcb6;border-radius:12px;padding:10px 14px;font-size:13px;margin:12px 0}
+.warn{background:rgba(255,107,107,.08);border:1px solid rgba(255,107,107,.25);color:#ffd0d0;border-radius:12px;padding:10px 14px;font-size:13px;margin:12px 0}
+.band .hinweis,.band .warn{margin:12px 0 0}
+.update{display:flex;align-items:center;justify-content:space-between;gap:12px;background:rgba(255,92,138,.08);border:1px solid rgba(255,92,138,.25);border-radius:12px;padding:8px 8px 8px 14px;margin-top:12px;font-size:13px}
+.updlink{display:block;text-align:right;font-size:12px;color:var(--dim);margin-top:6px}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+td.z,th.z{text-align:right}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:rgba(255,255,255,.015)}
+a{color:var(--acc2);text-decoration:none}
+a:hover{text-decoration:underline}
+.stat{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.stat div{background:var(--p2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;color:var(--mut);font-size:12.5px}
+.stat b{display:block;font-size:22px;font-weight:650;color:var(--txt);letter-spacing:-.02em;margin-bottom:2px}
+pre{background:var(--p1);border:1px solid var(--line);border-radius:16px;padding:16px 18px;font:12.5px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;overflow:auto;white-space:pre-wrap;color:#c9ccd4;margin:0}
+code{font-family:ui-monospace,Consolas,monospace;background:var(--p3);padding:1px 5px;border-radius:5px;font-size:.92em}
+ul{margin:8px 0;padding-left:20px}
+li{margin:4px 0}
+.laengen{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.leer{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:100px 20px;color:var(--mut)}
+.leer svg{color:var(--dim);margin-bottom:6px}
+.leer b{color:var(--txt);font-size:16px;font-weight:600}
+.leer span{max-width:400px;font-size:13.5px}
+#neuBtn{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:30}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,16px);opacity:0;background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:10px;font-weight:600;font-size:13.5px;transition:.2s;pointer-events:none;z-index:40}
+#toast.an{opacity:1;transform:translate(-50%,0)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--p3);border-radius:10px;border:3px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+@media(max-width:1200px){.review{grid-template-columns:240px minmax(0,1fr) 360px}}
+@media(max-width:980px){.review{grid-template-columns:1fr;height:auto;min-height:0}.liste{flex-direction:row;overflow-x:auto;padding:0 0 6px}.listekopf{display:none}.item{flex:none;width:250px}.buehne video{flex:none;height:min(70vh,640px)}.tasten{display:none}}
+@media(max-width:640px){body{height:auto;min-height:100vh;overflow:visible}main{overflow:visible}.top{position:sticky;top:0;flex-wrap:wrap;height:auto;padding:10px 14px 0;gap:8px}.top #tabs{order:3;flex-basis:100%;height:44px}#stat{margin-left:auto}main,.band{padding-left:14px;padding-right:14px}.item{width:220px}.panel{padding:16px}}
 </style></head><body>
-<header><div class="logo">C</div><h1>clip-watcher</h1><span id="stat"></span></header>
-<div id="banner" class="band"></div><div id="upd" class="band"></div><nav id="tabs"></nav><main id="main"></main><div id="neuBtn"></div>
+<header class="top"><div class="brand"><span class="logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l10-6.5z"/></svg></span>clip-watcher</div><nav id="tabs"></nav><div id="stat"></div></header>
+<div id="banner" class="band"></div><div id="upd" class="band"></div>
+<main id="main"></main><div id="neuBtn"></div><div id="toast"></div>
 <script>
-let tab='neu',clips=[],cfg=null,status={},caps={},offen={},sig='',hookE={},hv={},ups={},kontoSt={},uwahl={};
+let tab='neu',clips=[],cfg=null,caps={},sig='',hookE={},hv={},ups={},kontoSt={},sel=null,pt={},check={},hookV={},autoplay=false,busy={};
 const $=s=>document.querySelector(s);
-let erzwingen=false;
-const api=(u,b)=>{if(b)erzwingen=true;return fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json())};
-function tabs(){const t=[['neu','Neu'],['gut','Gut'],['weg','Verworfen'],['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
-$('#tabs').innerHTML=t.map(([k,n])=>`<button class="${tab==k?'akt':''}" onclick="tab='${k}';render()">${n}${['neu','gut','weg'].includes(k)?' ('+clips.filter(c=>c.status==k).length+')':''}</button>`).join('')}
+const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const sv=(d,w)=>'<svg viewBox="0 0 24 24" width="'+(w||18)+'" height="'+(w||18)+'" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
+const P={check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',down:'<path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/>',
+ spark:'<path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>',
+ film:'<rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',play:'<path d="M8 5.5v13l10-6.5z" fill="currentColor"/>'};
+const KLIPS=['neu','gut','weg'];
 function esc(s){return String(s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-function karte(c){const o=(k)=>(offen[c.id+k]?'open':'');const ot=(k)=>`ontoggle="offen['${c.id}${k}']=this.open"`;
-return `<div class="karte"><video src="${c.video}" controls playsinline preload="metadata"></video><div class="inh">
-<div class="kopf"><b>${esc(c.quelle)}</b><span class="tag ${c.status}">${c.status=='neu'?'Neu':c.status=='gut'?'Gut':'Verworfen'}</span><span class="tag">${esc(c.rechte.split(' ')[0])}</span>${c.ut=='laeuft'?'<span class="tag neu">Untertitel folgen …</span>':''}</div>
-<div class="klein">${esc(c.zeit)} · ${esc(c.ausloeser)}</div>
-${c.gesagt?`<div class="zitat">„${esc(c.gesagt)}“</div>`:''}
-${c.chat?`<div class="klein">Chat: ${esc(c.chat)}</div>`:''}
-${c.hook?`<div class="hk">Hook: <b>${esc(c.hook)}</b></div>`:''}
-<div class="aktion"><button class="btn gut" onclick="setze('${c.id}','gut')">&#10003; Gut</button><button class="btn weg" onclick="setze('${c.id}','weg')">&#10005; Weg</button><a class="btn" href="${c.video}" download title="Video laden">&#8681;</a></div>
-<details ${o('h')} ${ot('h')}><summary>Hook</summary>
-<div class="zeile"><input id="h_${c.id}" placeholder="Hook-Text (max. 8 Wörter)" value="${esc(hookE[c.id]||c.hook)}" maxlength="80"><button class="btn pri" onclick="hook('${c.id}')">Einbauen</button></div>
-<div class="zeile"><button class="btn" onclick="vorschlag('${c.id}')">&#10024; Vorschläge</button></div>
-${hv[c.id]?`<div class="zeile">${hv[c.id].map(t=>`<button class="btn" onclick="hookWahl('${c.id}',this.dataset.t)" data-t="${esc(t)}">${esc(t)}</button>`).join('')}</div>`:''}
-<div class="zeile"><input id="t_${c.id}" placeholder="Hook-Typ (Frage, Zahl, Schock …)" value="${esc(c.hook_typ)}" maxlength="40"><button class="btn" onclick="hooktyp('${c.id}')">Typ speichern</button></div></details>
-<details ${o('c')||(caps[c.id]||ups[c.id]?'open':'')} ${ot('c')}><summary>Caption &amp; Upload</summary>
-<div class="zeile"><button class="btn pri" onclick="caption('${c.id}')">Caption erstellen</button>${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
-${ups[c.id]?uploadPanel(c):''}
-${caps[c.id]?`<div style="margin-top:8px"><textarea id="cp_${c.id}" readonly>${esc(caps[c.id].block)}</textarea><div class="klein">${caps[c.id].laenge} Zeichen im Titel${caps[c.id].hinweis?' · Nachweis: '+esc(caps[c.id].hinweis):''}</div><div class="zeile"><button class="btn pri" onclick="kopiere('${c.id}')">Kopieren</button><button class="btn" onclick="delete caps['${c.id}'];render()">Schließen</button></div></div>`:''}
-</details>
-<details ${o('l')} ${ot('l')}><summary>YouTube-Link</summary>
-<div class="zeile"><input id="l_${c.id}" placeholder="Link nach dem Hochladen einfügen" value="${esc(c.link)}"><button class="btn" onclick="link('${c.id}')">Speichern</button></div>${c.srt?`<div class="zeile"><a class="btn" href="${c.srt}" download>Untertitel (.srt)</a></div>`:''}</details>
-</div></div>`}
+function tippt(){const a=document.activeElement&&document.activeElement.tagName;return a=='INPUT'||a=='TEXTAREA'||a=='SELECT'}
+function toast(t){const e=$('#toast');e.textContent=t;e.classList.add('an');clearTimeout(window.__tt);window.__tt=setTimeout(()=>e.classList.remove('an'),1800)}
+function gesagt(c){const g=(c.gesagt||'').trim();return g.startsWith('(')?'':g}
+function liste(){return clips.filter(c=>c.status==tab)}
+function aktuell(){return clips.find(c=>c.id==sel)}
+
+function tabs(){const n=k=>clips.filter(c=>c.status==k).length;
+ const t=[['neu','Neu',n('neu')],['gut','Gut',n('gut')],['weg','Verworfen',n('weg')],null,['trends','Trends'],['tracker','Tracker'],['kanaele','Kanäle'],['log','Protokoll']];
+ $('#tabs').innerHTML=t.map(x=>x?`<button class="${tab==x[0]?'akt':''}" onclick="geheZu('${x[0]}')">${x[1]}${x[2]!=null?`<span class="zahl">${x[2]}</span>`:''}</button>`:'<span class="trenn"></span>').join('')}
+function geheZu(k){tab=k;sel=null;render()}
+
 function render(){tabs();const m=$('#main');
- if(['neu','gut','weg'].includes(tab)){const l=clips.filter(c=>c.status==tab);
-  m.innerHTML=(tab=='neu'?'<div class="hinweis">Vor dem Posten ansehen: kein Spoiler, keine Zwischensequenz allein, kein Leak, keine laute Musik. Bezahlter Clip: „Werbung“ sichtbar.</div>':'')+(l.length?`<div class="grid">${l.map(karte).join('')}</div>`:'<div class="leer">Noch nichts hier.</div>')}
- else if(tab=='kanaele'&&cfg){m.innerHTML=`<div class="box"><b>Überwachte Kanäle</b>`+cfg.kanaele.map(k=>`<div class="zeile" style="align-items:center"><div style="flex:1"><b>${esc(k.name)}</b> <span class="tag">${esc(k.rechte)}</span><div class="klein">${esc(k.nachweis)}</div></div><button class="btn weg" onclick="loesche('${esc(k.name)}')">Entfernen</button></div>`).join('')+`</div>
-<div class="box"><b>Kanal hinzufügen</b><div class="hinweis">Fremde Kanäle nur mit Grundlage: Kampagne oder Erlaubnis des Streamers, dazu Link oder Notiz.</div>
-<input id="kn" placeholder="Kanalname (ohne twitch.tv/)" style="margin-bottom:8px"><select id="kr" style="margin-bottom:8px"><option value="kampagne">kampagne</option><option value="erlaubnis">erlaubnis</option><option value="eigen">eigen</option></select>
-<input id="kv" placeholder="Nachweis: Link oder Notiz" style="margin-bottom:8px"><button class="btn pri" onclick="kanal()">Speichern und Watcher neu starten</button></div>
-<div class="box"><button class="btn" onclick="api('/api/watcher',{aktion:'start'}).then(load)">Watcher (neu) starten</button> <button class="btn weg" onclick="api('/api/watcher',{aktion:'stop'}).then(load)">Watcher stoppen</button></div>`}
- else if(tab=='trends'){api('/api/trend').then(r=>{m.innerHTML=trendHtml(r)})}
- else if(tab=='tracker'){api('/api/tracker').then(r=>{m.innerHTML=trackerHtml(r)})}
- else if(tab=='log'){api('/api/log').then(r=>{m.innerHTML='<pre>'+esc(r.log||'(noch nichts)')+'</pre>'})}}
-function uploadPanel(c){const u=ups[c.id];return `<div class="box" style="margin-top:8px"><b>Upload zu YouTube</b><div class="hinweis">Nichts wird automatisch hochgeladen. Vorschau siehst du oben im Video. Titel und Beschreibung prüfen, dann bewusst bestätigen.</div>
+ if(KLIPS.includes(tab)){m.innerHTML=reviewHtml(liste());nachRender()}
+ else if(tab=='kanaele'&&cfg){m.innerHTML='<div class="seite">'+kanaeleHtml()+'</div>'}
+ else if(tab=='trends'){api('/api/trend').then(r=>{m.innerHTML='<div class="seite">'+trendHtml(r)+'</div>'})}
+ else if(tab=='tracker'){api('/api/tracker').then(r=>{m.innerHTML='<div class="seite">'+trackerHtml(r)+'</div>'})}
+ else if(tab=='log'){api('/api/log').then(r=>{m.innerHTML='<div class="seite"><pre>'+esc(r.log||'(noch nichts)')+'</pre></div>';m.scrollTop=m.scrollHeight})}}
+function nachRender(){const v=$('#vid');if(v&&autoplay){v.play().catch(()=>{})}autoplay=false}
+function teil(){if(!KLIPS.includes(tab))return;const c=aktuell();const p=$('#panel'),l=$('#liste');if(!c||!p){render();return}
+ const a=document.activeElement,id=a&&p.contains(a)&&a.id,wert=id&&a.value,pos=id&&a.selectionStart;
+ p.innerHTML=panel(c);if(l)l.innerHTML=listeInnen(liste());
+ if(id){const n=document.getElementById(id);if(n){n.focus();if(wert!=null)n.value=wert;try{n.setSelectionRange(pos,pos)}catch(e){}}}}
+
+function reviewHtml(l){
+ if(!l.length)return `<div class="leer">${sv(P.film,40)}<b>${tab=='neu'?'Noch keine neuen Clips':tab=='gut'?'Noch keine guten Clips':'Nichts verworfen'}</b><span>${tab=='neu'?'Sobald ein Kanal live ist und der Chat ausschlägt, landen die Clips hier.':'Sortiere Clips im Tab „Neu“ mit G (gut) oder W (weg).'}</span></div>`;
+ if(!l.find(c=>c.id==sel))sel=l[0].id;const c=aktuell();
+ return `<div class="review"><aside class="liste" id="liste">${listeInnen(l)}</aside>
+ <section class="buehne"><video id="vid" src="${c.video}${hookV[c.id]?'?v='+hookV[c.id]:''}" controls playsinline loop preload="metadata"></video>
+ <div class="tasten"><kbd>G</kbd><i>gut</i><kbd>W</kbd><i>weg</i><kbd>↑</kbd><kbd>↓</kbd><i>Clip wechseln</i><kbd>Leertaste</kbd><i>Play/Pause</i></div></section>
+ <section class="panel" id="panel">${panel(c)}</section></div>`}
+function listeInnen(l){return `<div class="listekopf">${l.length} ${l.length==1?'Clip':'Clips'}</div>`+l.map(item).join('')}
+function kurzZeit(z){return (z||'').split(' ')[1]||z||''}
+function item(c){const txt=c.hook||gesagt(c)||c.ausloeser||'–';
+ return `<button class="item ${c.id==sel?'akt':''}" onclick="waehle('${c.id}')">
+ <span class="thumb">${c.vorschau?`<img src="${c.vorschau}" loading="lazy" alt="">`:sv(P.play,18)}</span>
+ <span class="itxt"><span class="izeile"><b>${esc(c.quelle)}</b><span class="zeit">${esc(kurzZeit(c.zeit))}</span></span>
+ <span class="iquote">${esc(txt)}</span>
+ <span class="imeta">${c.hook?'<span class="pill acc">Hook</span>':''}${c.ut=='laeuft'?'<span class="pill gelb">Untertitel …</span>':''}${c.link?'<span class="pill ok">online</span>':''}</span></span></button>`}
+
+function panel(c){const p=pt[c.id]||'hook',kamp=(c.rechte||'').startsWith('kampagne');
+ return `<div class="pkopf"><div><h2>${esc(c.quelle)}</h2><div class="meta">${esc(c.zeit)}${c.ausloeser?' · '+esc(c.ausloeser):''}</div></div>
+ <div class="tags">${kamp?'<span class="pill acc">Kampagne</span>':`<span class="pill">${esc((c.rechte||'').split(' ')[0])}</span>`}${c.ut=='laeuft'?'<span class="pill gelb">Untertitel folgen</span>':c.ut=='fertig'?'<span class="pill ok">Untertitel</span>':''}</div></div>
+ ${gesagt(c)?`<blockquote>„${esc(gesagt(c))}“</blockquote>`:''}
+ ${c.chat&&c.chat!='-'?`<div class="chips chatzeile">${c.chat.split(',').map(w=>`<span class="chip mini">${esc(w.trim())}</span>`).join('')}</div>`:''}
+ <div class="entscheid"><button class="btn gut gross ${c.status=='gut'?'an':''}" onclick="setze('${c.id}','gut')">${sv(P.check)}Gut<kbd>G</kbd></button><button class="btn weg gross ${c.status=='weg'?'an':''}" onclick="setze('${c.id}','weg')">${sv(P.x)}Weg<kbd>W</kbd></button></div>
+ <div class="seg">${[['hook','Hook'],['caption','Caption'],['post','Posten']].map(([k,n])=>`<button class="${p==k?'akt':''}" onclick="pane('${c.id}','${k}')">${n}</button>`).join('')}</div>
+ <div class="pane">${p=='hook'?paneHook(c):p=='caption'?paneCaption(c):panePost(c)}</div>`}
+function pane(id,k){pt[id]=k;teil()}
+
+const TYPEN=['Frage','Zahl','Schock','Reaktion','Zitat'];
+function paneHook(c){const v=hv[c.id];if(v===undefined)ladeVorschlag(c.id);
+ const wert=hookE[c.id]!=null?hookE[c.id]:c.hook;
+ return `<label class="lbl">Hook-Text <span>max. 8 Wörter, oben in den ersten 2,5 s</span></label>
+ <div class="feld"><input id="h_${c.id}" value="${esc(wert)}" placeholder="z. B. Das hat keiner kommen sehen" maxlength="80" oninput="hookE['${c.id}']=this.value" onkeydown="if(event.key=='Enter')hook('${c.id}')">
+ <button class="btn pri" ${busy[c.id]?'disabled':''} onclick="hook('${c.id}')">${busy[c.id]?'Baue ein …':(c.hook?'Ändern':'Einbauen')}</button></div>
+ <label class="lbl">${sv(P.spark,14)} Vorschläge <span>antippen, dann einbauen</span></label>
+ <div class="chips">${v?v.map(t=>`<button class="chip ${wert==t?'an':''}" data-t="${esc(t)}" onclick="hookWahl('${c.id}',this.dataset.t)">${esc(t)}</button>`).join(''):'<span class="klein">Lädt …</span>'}</div>
+ <label class="lbl">Hook-Typ <span>für die Auswertung im Tracker</span></label>
+ <div class="chips">${TYPEN.map(t=>`<button class="chip ${c.hook_typ==t?'an':''}" onclick="typSetzen('${c.id}','${t}')">${t}</button>`).join('')}</div>`}
+async function ladeVorschlag(id){if(hv[id]!==undefined)return;hv[id]=null;const r=await api('/api/hookvorschlag?id='+encodeURIComponent(id));hv[id]=r.vorschlaege||[];if(id==sel)teil()}
+function hookWahl(id,t){hookE[id]=t;teil();const i=document.getElementById('h_'+id);if(i)i.focus()}
+async function typSetzen(id,t){const c=clips.find(x=>x.id==id),neu=c&&c.hook_typ==t?'':t;
+ const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:neu});if(r.fehler)return alert(r.fehler);toast(neu?'Hook-Typ: '+neu:'Hook-Typ entfernt');load({still:true})}
+async function hook(id){const i=document.getElementById('h_'+id),t=(i?i.value:'').trim();if(!t)return alert('Bitte Hook-Text eingeben.');
+ busy[id]=true;teil();const r=await api('/api/hook',{id,text:t});busy[id]=false;
+ if(r.fehler){teil();return alert(r.fehler)}
+ delete hookE[id];delete caps[id];hookV[id]=Date.now();toast('Hook eingebaut');load({voll:true})}
+
+function paneCaption(c){const k=caps[c.id];if(k===undefined)ladeCaption(c.id);
+ if(!k)return '<div class="leise">Caption wird erstellt …</div>';
+ return `<div class="capkopf"><span class="klein">Titel: <b class="${k.laenge>100?'rot':''}">${k.laenge}</b> / 100 Zeichen</span><button class="btn pri" onclick="kopiere('${c.id}')">${sv(P.copy,16)}Kopieren</button></div>
+ <textarea id="cp_${c.id}" readonly rows="11">${esc(k.block)}</textarea>
+ ${k.kampagne?`<div class="hinweis"><b>Kampagne:</b> „Werbung“ und die Pflichtangaben sind drin. Nachweis: ${esc(k.hinweis)}</div>`:''}
+ <div class="leise">Titel und Beschreibung nutzen deinen Hook. Nach einer Hook-Änderung wird die Caption neu erstellt.</div>`}
+async function ladeCaption(id){if(caps[id]!==undefined)return;caps[id]=null;const r=await api('/api/caption?id='+encodeURIComponent(id));
+ if(r.fehler){delete caps[id];return alert(r.fehler)}caps[id]=r;if(id==sel)teil()}
+function kopiere(id){const t=document.getElementById('cp_'+id);if(!t)return;t.select();
+ if(navigator.clipboard&&window.isSecureContext){navigator.clipboard.writeText(t.value).then(()=>toast('Caption kopiert'))}
+ else{let ok=false;try{ok=document.execCommand('copy')}catch(e){}toast(ok?'Caption kopiert':'Bitte mit Strg+C kopieren')}}
+
+const CHECKS=['Kein Spoiler, keine Zwischensequenz allein','Kein Leak, keine laute Musik im Hintergrund','Hook und Untertitel sind drin','Bei Kampagne: „Werbung“ sichtbar, Pflichtangaben drin'];
+function panePost(c){const ch=check[c.id]||[];
+ return `<label class="lbl">Vor dem Posten</label>
+ <div class="checks">${CHECKS.map((t,i)=>`<label class="check"><input type="checkbox" ${ch[i]?'checked':''} onchange="hake('${c.id}',${i},this.checked)"><span>${t}</span></label>`).join('')}</div>
+ <label class="lbl">Dateien</label>
+ <div class="zeile" style="margin-top:0"><a class="btn" href="${c.video}" download>${sv(P.down,16)}Video laden</a>${c.srt?`<a class="btn ghost" href="${c.srt}" download>Untertitel .srt</a>`:''}${kontoSt.upload_aktiv&&kontoSt.upload_scope&&c.status=='gut'?`<button class="btn" onclick="uploadOeffnen('${c.id}')">Hochladen …</button>`:''}</div>
+ ${ups[c.id]?uploadPanel(c):''}
+ <label class="lbl">YouTube-Link <span>nach dem Hochladen eintragen</span></label>
+ <div class="feld"><input id="l_${c.id}" value="${esc(c.link)}" placeholder="https://youtube.com/shorts/…" onkeydown="if(event.key=='Enter')link('${c.id}')"><button class="btn" onclick="link('${c.id}')">Speichern</button></div>`}
+function hake(id,i,an){(check[id]=check[id]||[])[i]=an}
+async function link(id){const r=await api('/api/link',{id,link:document.getElementById('l_'+id).value});if(r.fehler)return alert(r.fehler);toast('Link gespeichert');load({still:true})}
+
+function waehle(id){if(id==sel)return;sel=id;autoplay=true;render()}
+async function setze(id,s){const l=liste(),i=l.findIndex(c=>c.id==id),nach=l[i+1]||l[i-1];
+ const r=await api('/api/status',{id,status:s});if(r.fehler)return alert(r.fehler);
+ if(s!=tab){sel=nach?nach.id:null;autoplay=!!nach}toast(s=='gut'?'Als gut markiert':s=='weg'?'Verworfen':'Zurück in Neu');load({voll:true})}
+
+function kanaeleHtml(){const L=cfg.clip_laenge_s||18;
+ return `<div class="box"><b>Clip-Länge</b><div class="klein">Gilt für neue Clips. Der Höhepunkt liegt bei etwa zwei Dritteln, danach endet der Clip schnell.</div>
+ <div class="laengen">${[15,16,17,18,19,20].map(s=>`<button class="chip ${L==s?'an':''}" onclick="laenge(${s})">${s} s</button>`).join('')}</div></div>
+ <div class="box"><b>Überwachte Kanäle</b>`+cfg.kanaele.map(k=>`<div class="zeile"><div style="flex:1;min-width:0"><b>${esc(k.name)}</b> <span class="tag">${esc(k.rechte)}</span><div class="klein" style="overflow-wrap:anywhere">${esc(k.nachweis)}</div></div><button class="btn weg" onclick="loesche('${esc(k.name)}')">Entfernen</button></div>`).join('')+`</div>
+ <div class="box"><b>Kanal hinzufügen</b><div class="hinweis">Fremde Kanäle nur mit Grundlage: Kampagne oder Erlaubnis des Streamers, dazu Link oder Notiz.</div>
+ <div class="zeile"><input id="kn" placeholder="Kanalname (ohne twitch.tv/)"><select id="kr" style="width:auto"><option value="kampagne">kampagne</option><option value="erlaubnis">erlaubnis</option><option value="eigen">eigen</option></select></div>
+ <div class="zeile"><input id="kv" placeholder="Nachweis: Link oder Notiz"><button class="btn pri" onclick="kanal()">Speichern und Watcher neu starten</button></div></div>
+ <div class="box"><b>Watcher</b><div class="zeile"><button class="btn" onclick="api('/api/watcher',{aktion:'start'}).then(()=>load({voll:true}))">Watcher (neu) starten</button><button class="btn weg" onclick="api('/api/watcher',{aktion:'stop'}).then(()=>load({voll:true}))">Watcher stoppen</button></div></div>`}
+async function laenge(s){if(!confirm('Clip-Länge auf '+s+' Sekunden stellen? Der Watcher startet dafür kurz neu, eine laufende Aufnahme beginnt von vorn.'))return;
+ const r=await api('/api/einstellung',{clip_laenge_s:s});if(r.fehler)return alert(r.fehler);toast('Neue Clips: '+s+' Sekunden');load({voll:true})}
+
+async function load(opt){opt=opt||{};const [c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')]);clips=c.clips;cfg=cf;kontoSt=ko;
+ $('#stat').innerHTML=`<span class="dot ${s.laeuft?'an':''}"></span>${s.laeuft?'Watcher läuft':'Watcher aus'}`;
+ $('#banner').innerHTML=(s.hinweis?`<div class="warn">${esc(s.hinweis)}</div>`:'')+(s.platz_warnung?`<div class="warn">Nur noch ${s.frei_gb} GB Festplatte frei (Warnung unter ${s.min_frei_gb} GB). Clips mit „Weg“ markieren oder alte Aufnahmen löschen.</div>`:'')+Object.entries(s.fehler||{}).map(([k,v])=>`<div class="warn">${esc(k)}: ${esc(v)}</div>`).join('');
+ const neu=JSON.stringify([c.clips,cf,ko]);tabs();
+ if(opt.still){sig=neu;teil();return}
+ if(tab=='log'){if(!tippt())render();return}
+ if(neu!==sig||opt.voll){if(!opt.voll&&(tippt()||videoBenutzt())){$('#neuBtn').innerHTML='<button class="btn pri" onclick="neuLaden()">Neue Clips – Anzeige aktualisieren</button>'}
+  else{sig=neu;$('#neuBtn').innerHTML='';render()}}}
+function videoBenutzt(){const v=$('#vid');return !!v&&!v.ended&&(!v.paused||v.currentTime>0.2)}
+async function neuLaden(){$('#neuBtn').innerHTML='';await load({voll:true})}
+
+document.addEventListener('keydown',e=>{if(tippt()||!KLIPS.includes(tab)||e.ctrlKey||e.metaKey||e.altKey)return;
+ const l=liste(),i=l.findIndex(c=>c.id==sel),v=$('#vid'),k=e.key.toLowerCase();
+ if(k=='g'&&sel)setze(sel,'gut');else if(k=='w'&&sel)setze(sel,'weg');
+ else if(k=='arrowdown'||k=='j'){e.preventDefault();if(l[i+1])waehle(l[i+1].id)}
+ else if(k=='arrowup'||k=='k'){e.preventDefault();if(i>0)waehle(l[i-1].id)}
+ else if(k==' '&&v&&document.activeElement!==v){e.preventDefault();v.paused?v.play():v.pause()}});
+async function updateLaden(){const u=await api('/api/update');window.updInfo=u;
+ $('#upd').innerHTML=u.info&&u.info.neu?`<div class="update"><span><b>Update verfügbar</b> <span class="klein">Version ${esc(u.info.kurz)} · Clips und Einstellungen bleiben erhalten</span></span><button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'')}
+function uploadPanel(c){const u=ups[c.id];return `<div class="box" style="margin-top:8px"><b>Upload zu YouTube</b><div class="hinweis">Nichts wird automatisch hochgeladen. Vorschau siehst du links im Video. Titel und Beschreibung prüfen, dann bewusst bestätigen.</div>
 <input id="ut_${c.id}" value="${esc(u.titel)}" maxlength="100" style="margin-bottom:6px"><textarea id="ub_${c.id}">${esc(u.beschreibung)}</textarea>
 <select id="us_${c.id}" style="margin:6px 0"><option value="private">privat (Standard)</option><option value="unlisted">nicht gelistet</option><option value="public">öffentlich</option></select>
-<div class="zeile"><button class="btn pri" onclick="uploadGo('${c.id}')">Ja, jetzt hochladen</button><button class="btn" onclick="delete ups['${c.id}'];render()">Abbrechen</button></div></div>`}
-async function uploadOeffnen(id){const r=await api('/api/caption?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);ups[id]={titel:r.titel,beschreibung:r.beschreibung};render()}
+<div class="zeile"><button class="btn pri" onclick="uploadGo('${c.id}')">Ja, jetzt hochladen</button><button class="btn" onclick="delete ups['${c.id}'];teil()">Abbrechen</button></div></div>`}
+async function uploadOeffnen(id){const r=await api('/api/caption?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);ups[id]={titel:r.titel,beschreibung:r.beschreibung};teil()}
 async function uploadGo(id){const sv=$('[id="us_'+id+'"]').value;if(sv!='private'&&!confirm('Sichtbarkeit „'+sv+'“ wirklich? Standard ist privat.'))return;
  const r=await api('/api/upload',{id,bestaetigt:true,sichtbarkeit:sv,titel:$('[id="ut_'+id+'"]').value,beschreibung:$('[id="ub_'+id+'"]').value});
- if(r.fehler)return alert(r.fehler);delete ups[id];alert('Hochgeladen ('+sv+'). Link wurde in die Liste eingetragen.');load()}
-async function updateLaden(){const u=await api('/api/update');window.updInfo=u;
- $('#upd').innerHTML=u.info&&u.info.neu?`<div class="hinweis">Update verfügbar (${esc(u.info.kurz)}). <button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:'<div class="klein" style="margin:4px 0"><a href="#" onclick="updatePruefen();return false">Auf Update prüfen</a></div>'+(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'')}
+ if(r.fehler)return alert(r.fehler);delete ups[id];alert('Hochgeladen ('+sv+'). Link wurde in die Liste eingetragen.');load({voll:true})}
 async function updatePruefen(){const r=await api('/api/update/pruefen',{});if(r.fehler)alert(r.fehler);else if(!(await api('/api/update')).info.neu)alert('Du hast die neueste Version.');updateLaden()}
 async function updateStart(){const u=window.updInfo||{};
  if(!confirm((u.aufnahme_aktiv?'ACHTUNG: Es läuft gerade eine Aufnahme, ein laufender Clip kann verloren gehen.\\n\\n':'')+'Update installieren? Clips, Einstellungen und Token bleiben erhalten. Die App startet kurz neu.'))return;
  const r=await api('/api/update/installieren',{});if(r.fehler)return alert(r.fehler);
  $('#upd').innerHTML='<div class="hinweis">Update eingespielt ('+r.geaendert.length+' Dateien). App startet neu …'+(u.neustart_automatisch?'':' Falls die Seite nicht zurückkommt: starten.bat einfach neu öffnen.')+'</div>';
  for(let i=0;i<40;i++){await new Promise(x=>setTimeout(x,1500));try{await fetch('/api/status-watcher');if(i>2){location.reload();return}}catch(e){}}}
-async function vorschlag(id){const r=await api('/api/hookvorschlag?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);hv[id]=r.vorschlaege;render()}
-function hookWahl(id,t){hookE[id]=t;render()}
-async function hooktyp(id){const r=await api('/api/feld',{id,spalte:'Hook-Typ',wert:$('[id="t_'+id+'"]').value});if(r.fehler)alert(r.fehler);load()}
 function kontoBox(){const k=kontoSt;let h='<div class="box"><b>YouTube-Konto (nur lesend)</b> ';
  if(!k.client_da)h+='<div class="hinweis">Zuerst <code>client_secret.json</code> aus der Google Cloud Console laden (Anmeldedaten → OAuth-Client-ID erstellen → Typ „Desktop-App“ → JSON herunterladen) und in den Programmordner legen. Zusätzlich in „OAuth-Zustimmungsbildschirm“ dich selbst als Testnutzer eintragen und die „YouTube Analytics API“ aktivieren.</div>';
  else if(!k.verbunden)h+='<div class="klein">Nicht verbunden. Gelesen werden nur Analytics-Zahlen deiner eigenen Shorts.</div><div class="zeile"><button class="btn pri" onclick="kontoLogin()">Mit Google verbinden</button></div>';
@@ -310,23 +509,8 @@ function trackerHtml(r){let h=keyBox(r)+kontoBox();if(r.fehler)h+=`<div class="w
 async function schluessel(){const r=await api('/api/schluessel',{schluessel:$('#ak').value});if(r.fehler)alert(r.fehler);load()}
 async function trendNeu(){const r=await api('/api/trend/aktualisieren',{});if(r.fehler)alert(r.fehler);render()}
 async function trackerNeu(){const r=await api('/api/tracker/aktualisieren',{});if(r.fehler)alert(r.fehler);render()}
-async function link(id){const r=await api('/api/link',{id,link:$('[id="l_'+id+'"]').value});if(r.fehler)alert(r.fehler);load()}
-async function caption(id){const r=await api('/api/caption?id='+encodeURIComponent(id));if(r.fehler)return alert(r.fehler);caps[id]=r;render()}
-function kopiere(id){const t=$('[id="cp_'+id+'"]');t.select();let ok=false;try{ok=document.execCommand('copy')}catch(e){}
- if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(t.value).then(()=>alert('Kopiert.'));else alert(ok?'Kopiert.':'Bitte von Hand kopieren (Strg+C).')}
-async function setze(id,s){await api('/api/status',{id,status:s});load()}
-async function hook(id){const t=$('[id="h_'+id+'"]').value.trim();if(!t)return alert('Bitte Hook-Text eingeben.');const r=await api('/api/hook',{id,text:t});if(r.fehler)alert(r.fehler);load()}
 async function kanal(){const r=await api('/api/kanal',{name:$('#kn').value,rechte:$('#kr').value,nachweis:$('#kv').value});if(r.fehler)alert(r.fehler);load()}
 async function loesche(n){if(!confirm(n+' entfernen?'))return;await api('/api/kanal/loeschen',{name:n});load()}
-async function load(){const [c,cf,s,ko]=await Promise.all([api('/api/clips'),api('/api/config'),api('/api/status-watcher'),api('/api/konto')]);clips=c.clips;cfg=cf;kontoSt=ko;
- $('#stat').innerHTML=`<span class="dot ${s.laeuft?'an':''}"></span>${s.laeuft?'Watcher läuft':'Watcher aus'}`;
- $('#banner').innerHTML=(s.hinweis?`<div class="warn">${esc(s.hinweis)}</div>`:'')+(s.platz_warnung?`<div class="warn">Nur noch ${s.frei_gb} GB Festplatte frei (Warnung unter ${s.min_frei_gb} GB). Clips mit „Weg“ markieren oder alte Aufnahmen löschen.</div>`:'')+Object.entries(s.fehler||{}).map(([k,v])=>`<div class="warn">${esc(k)}: ${esc(v)}</div>`).join('');
- const a=document.activeElement&&document.activeElement.tagName,tippt=(a=='INPUT'||a=='TEXTAREA'||a=='SELECT');
- const neu=JSON.stringify([c.clips,cf,ko]);tabs();
- if(tab=='log'){if(!tippt)render()}
- else if(neu!==sig||erzwingen){if((tippt||videoBenutzt())&&!erzwingen){$('#neuBtn').innerHTML='<button class="btn pri" onclick="neuLaden()">Neue Daten – Anzeige aktualisieren</button>'}else{sig=neu;erzwingen=false;$('#neuBtn').innerHTML='';render()}}}
-function videoBenutzt(){return [...document.querySelectorAll('video')].some(v=>!v.ended&&(!v.paused||v.currentTime>0.2))}
-async function neuLaden(){sig='';$('#neuBtn').innerHTML='';await load()}
 load();updateLaden();setInterval(load,8000);setInterval(updateLaden,600000);
 </script></body></html>"""
 
@@ -491,6 +675,16 @@ class H(BaseHTTPRequestHandler):
                 NEUSTART["an"] = True
                 threading.Timer(1.0, lambda: SERVER["srv"].shutdown()).start()
                 return self._json({"ok": True, "geaendert": geaendert})
+            if p == "/api/einstellung":
+                laenge = int(d.get("clip_laenge_s", 0))
+                if not 15 <= laenge <= 20:
+                    raise ValueError("Clip-Länge: 15 bis 20 Sekunden.")
+                cfg = lade_config()
+                cfg["clip_laenge_s"] = laenge
+                speichere_config(cfg)
+                if watcher_laeuft():
+                    watcher_start()
+                return self._json({"ok": True})
             if p == "/api/feld":
                 if d.get("spalte") != "Hook-Typ" or not sicher(d["id"]).is_dir():
                     raise ValueError("Ungültig")

@@ -41,7 +41,7 @@ findet die lautesten Stellen und schneidet daraus Clips.
 - `min_score`, `schwelle_faktor`: höher = weniger, aber sicherere Clips. Zu viele Clips? Erhöhen. Keine? Senken.
 - `layout`: `unschaerfe` (ganzes Bild, unscharfer Hintergrund) oder `mitte` (Mittenschnitt)
 - `whisper_modell`: `small` ist gut für Deutsch; `base` ist schneller, `medium` genauer
-- `vorlauf_s` / `nachlauf_s`: Sekunden vor und nach dem Ausschlag (18 + 12 = 30 s)
+- `clip_laenge_s`: Länge der Clips in Sekunden (Standard 18, einstellbar 15 bis 20 im Tab „Kanäle“). Der Höhepunkt liegt bei etwa zwei Dritteln.
 
 ## Vor jedem Post
 Clip ansehen. Kein Spoiler, keine Zwischensequenz allein, kein Leak, keine laute Musik. Eigener Hook/Kommentar drauf.
