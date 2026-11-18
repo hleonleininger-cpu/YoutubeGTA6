@@ -40,7 +40,7 @@ def lade_config():
         return json.load(f)
 
 
-def fenster(cfg):
+def clip_fenster(cfg):
     """Sekunden vor und nach dem Höhepunkt. clip_laenge_s (Standard 18) ersetzt vorlauf_s/nachlauf_s.
     Der Höhepunkt liegt bei etwa zwei Dritteln, damit der Clip auf die Pointe zuläuft und kurz danach endet."""
     try:
@@ -571,7 +571,7 @@ class Kanal(threading.Thread):
             if score >= schwelle and bis - letzter_clip >= cfg.get("pause_zwischen_clips_s", 45):
                 letzter_clip = bis
                 moment = rec.rec_zeit(von) - cfg.get("chat_verzug_s", 4)
-                vor, nach = fenster(cfg)
+                vor, nach = clip_fenster(cfg)
                 rvon = max(0.0, moment - vor)
                 rbis = moment + nach
                 log(self.name, f"Ausschlag! Chat {score:.0f} (normal {basis:.0f}) -> Clip {rvon:.0f}-{rbis:.0f} s")
@@ -646,7 +646,7 @@ def datei_modus(datei, rechte, nachweis, cfg):
     if not hat_ton:
         sys.exit("Die Datei hat keinen Ton, Ausschläge lassen sich so nicht finden.")
     log("datei", f"Suche Lautstärke-Spitzen in {datei.name} ({dauer / 60:.0f} min) …")
-    vor, nach = fenster(cfg)
+    vor, nach = clip_fenster(cfg)
     spitzen = lautstaerke_spitzen(datei, cfg.get("max_clips_datei", 8), vor + nach)
     if not spitzen:
         sys.exit("Keine deutlichen Spitzen gefunden.")
