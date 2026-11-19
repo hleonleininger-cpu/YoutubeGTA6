@@ -24,6 +24,7 @@ Links die Seitenleiste (auf dem Handy unten), unten links die Watcher-Karte (aus
 - **Trends:** Muster aus aktuellen GTA-6-Shorts.
 - **Kanäle:** überwachte Kanäle mit Live-Status, Kanal hinzufügen (fremde nur mit Nachweis), Watcher starten/stoppen.
 - **Einstellungen:** Clip-Auswahl, Clip-Länge, Speicher, Aussehen (vier Farbstile), Benachrichtigungen (Desktop-Meldung und Ton bei neuem Clip), Twitch-Zugang, YouTube-Daten (API-Schlüssel), YouTube-Konto und Upload, Programm-Version und Update.
+- **Fernzugriff:** Unter Einstellungen → Fernzugriff ein Passwort setzen, dann lässt sich die App unterwegs auf dem Handy öffnen (Anleitung mit Tailscale steht dort) und als App auf den Startbildschirm legen. Ohne Passwort blockt die App jeden Zugriff über einen Tunnel. Nach 5 Fehlversuchen gibt es 5 Minuten Pause. Passwort vergessen: in `config.json` die Zeilen `zugang_hash` und `sitzung_geheimnis` löschen.
 - **Protokoll:** was der Watcher gerade macht.
 - **Tastenkürzel:** `?` zeigt alle. `G` gut, `W` weg, `↑`/`↓` Clip wechseln, `Leertaste` Play/Pause, `←`/`→` eine Sekunde, `M` Ton.
 - Nur den Watcher ohne Oberfläche: `python watcher.py`.

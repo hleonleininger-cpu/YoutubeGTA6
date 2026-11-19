@@ -9,9 +9,10 @@ import argparse, json, mimetypes, os, re, subprocess, sys, threading, time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from http.cookies import SimpleCookie
 from urllib.parse import parse_qs, unquote, urlparse
 
-import aktualisieren, caption, entdecken, konto, tracker, trend, wartung
+import aktualisieren, caption, entdecken, konto, tracker, trend, wartung, zugang
 
 BASIS = Path(__file__).resolve().parent
 CLIPS = BASIS / "clips"
@@ -22,6 +23,7 @@ LOCK = threading.Lock()
 MAX_NEUSTARTS_STUNDE = 5
 SERVER = {"srv": None}
 PORT = {"port": 8765}
+BREMSE = zugang.Bremse()
 NEUSTART = {"an": False}   # True: App beendet sich mit Code 3, starten.bat startet sie neu
 UPDATE = {"info": None, "fehler": ""}
 FEHLER = {}   # Meldungen der Hintergrundjobs (Trend, Tracker, Aufräumen) für die Oberfläche
@@ -100,6 +102,9 @@ def config_oeffentlich():
     cfg["twitch_gesetzt"] = all(entdecken.zugang(cfg))
     cfg.pop("twitch_client_id", None)
     cfg.pop("twitch_client_secret", None)
+    cfg["zugang_gesetzt"] = bool(cfg.get("zugang_hash"))
+    cfg.pop("zugang_hash", None)
+    cfg.pop("sitzung_geheimnis", None)
     return cfg
 
 
@@ -200,6 +205,8 @@ def hintergrund():
 HTML = """<!doctype html><html lang="de"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>clip-watcher</title>
+<meta name="theme-color" content="#0b0919"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon-192.png"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="clip-watcher"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
 <style>
 /* Layout: Seitenleiste links, Inhalt rechts. Farbe: tiefes Violett mit Verlauf aus zwei Leuchtfarben (Stil wählbar).
@@ -745,7 +752,7 @@ let tab='start',bekannt=null,filter='neu',clips=[],cfg=null,st={},kontoSt={},sel
 let pane={},caps={},hv={},hookE={},busy={},ups={},check={},hookV={};
 let stumm=false;try{stumm=localStorage.getItem('cw_stumm')=='1'}catch(e){}
 const $=s=>document.querySelector(s);
-const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>r.json());
+const api=(u,b)=>fetch(u,b?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)}:{}).then(r=>{if(r.status==401){location.href='/login';return new Promise(()=>{})}return r.json()});
 const sv=(d,w,f)=>'<svg viewBox="0 0 24 24" width="'+(w||18)+'" height="'+(w||18)+'" fill="'+(f?'currentColor':'none')+'" stroke="'+(f?'none':'currentColor')+'" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+d+'</svg>';
 const P={play:'<path d="M8 5.2v13.6L19 12z"/>',pause:'<rect x="6.5" y="5" width="3.8" height="14" rx="1"/><rect x="13.7" y="5" width="3.8" height="14" rx="1"/>',
  laut:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/>',stumm:'<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
@@ -1053,12 +1060,13 @@ function kanaeleHtml(){const live=st.aufnahme||[],k=cfg.kanaele||[];
 /* ---------- Einstellungen ---------- */
 function einstellungenHtml(){const L=cfg.clip_laenge_s||18,A=cfg.auswahl||'streng';
  const abschnitt=(id,t,u,inhalt)=>`<section class="karte" id="e_${id}"><div class="khead"><div><h3>${t}</h3>${u?`<span class="klein">${u}</span>`:''}</div></div>${inhalt}</section>`;
- return `<nav class="sprung">${[['auswahl','Clip-Auswahl'],['laenge','Clip-Länge'],['speicher','Speicher'],['aussehen','Aussehen'],['meldung','Benachrichtigungen'],['twitch','Twitch-Zugang'],['daten','YouTube-Daten'],['konto','YouTube-Konto'],['programm','Programm']].map(([k,t])=>`<a href="#e_${k}" onclick="document.getElementById('e_${k}').scrollIntoView({behavior:'smooth'});return false">${t}</a>`).join('')}</nav>
+ return `<nav class="sprung">${[['auswahl','Clip-Auswahl'],['laenge','Clip-Länge'],['speicher','Speicher'],['aussehen','Aussehen'],['meldung','Benachrichtigungen'],['zugang','Fernzugriff'],['twitch','Twitch-Zugang'],['daten','YouTube-Daten'],['konto','YouTube-Konto'],['programm','Programm']].map(([k,t])=>`<a href="#e_${k}" onclick="document.getElementById('e_${k}').scrollIntoView({behavior:'smooth'});return false">${t}</a>`).join('')}</nav>
  ${abschnitt('auswahl','Clip-Auswahl','Wie streng der Watcher ist. Gilt sofort, ohne Neustart.',`<div class="auswahl">${AUSW.map(([k,t,u])=>`<button class="${A==k?'an':''}" onclick="auswahl('${k}')"><b>${t}</b><span>${u}</span></button>`).join('')}</div>`)}
  ${abschnitt('laenge','Clip-Länge','Gilt für neue Clips. Die Pointe liegt bei etwa zwei Dritteln.',`<div class="laengen">${[15,16,17,18,19,20].map(s=>`<button class="typ ${L==s?'an':''}" onclick="laenge(${s})">${s} s</button>`).join('')}</div>`)}
  ${speicherHtml()}
  ${abschnitt('aussehen','Aussehen','Wähl den Farbstil. Gilt nur in diesem Browser.',farbwahl())}
  ${abschnitt('meldung','Benachrichtigungen','Damit du keinen Clip verpasst, vor allem bei Kampagnen mit Frist.',meldungHtml())}
+ ${abschnitt('zugang','Fernzugriff und Passwort','Damit du die App unterwegs auf dem Handy nutzen kannst. Ohne Passwort ist sie nur am PC nutzbar.',zugangHtml())}
  ${abschnitt('twitch','Twitch-Zugang','Für „Entdecken“: zeigt dir, welche Streams gerade live sind. Kostenlos, nur lesend.',twitchHtml())}
  ${abschnitt('daten','YouTube-Daten','Für Trends und die Aufrufe im Tracker. Kostenlos, 10.000 Punkte pro Tag.',keyHtml())}
  ${abschnitt('konto','YouTube-Konto','Für Durchsehrate und Wiedergabedauer deiner eigenen Shorts. Nur lesend, Upload ist aus.',kontoHtml())}
@@ -1181,6 +1189,25 @@ function ghalt(login){const g=ent.gr[login],b=document.getElementById('gbtn_'+lo
 async function kanalUebernehmen(login){const g=ent.gr[login];if(!g||!g.ok)return;
  const r=await api('/api/kanal',{name:login,rechte:g.rechte||'erlaubnis',nachweis:(g.nachweis||'').trim()});if(r.fehler)return alert(r.fehler);
  toast(login+' wird jetzt überwacht');delete ent.gr[login];ent.daten=null;await load({voll:true});if(tab=='entdecken')entLaden()}
+
+/* ---------- Fernzugriff ---------- */
+function zugangHtml(){const an=cfg.zugang_gesetzt;
+ const feld=(id,t,ac)=>`<label>${t}<input id="${id}" type="password" autocomplete="${ac}"></label>`;
+ return `<div class="status ${an?'gut':''}">${an?sv(P.check,14)+'Passwort ist gesetzt. Die App fragt vor dem Öffnen nach der Anmeldung.':'Noch kein Passwort. Von außen kommt niemand auf die App, solange keins gesetzt ist.'}</div>
+ <div class="formgrid" style="margin-top:12px">${an?feld('zalt','Aktuelles Passwort','current-password'):''}${feld('zneu',an?'Neues Passwort (mindestens 10 Zeichen)':'Passwort festlegen (mindestens 10 Zeichen)','new-password')}</div>
+ <div class="zeile"><button class="btn pri" onclick="zugangSetzen('${an?'aendern':'setzen'}')">${an?'Passwort ändern':'Passwort setzen'}</button>${an?`<button class="btn ghost" onclick="location.href='/logout'">Abmelden</button><button class="btn ghost weg" onclick="zugangSetzen('entfernen')">Passwort entfernen</button>`:''}</div>
+ <details class="hilfe-d"><summary>So nutzt du die App unterwegs auf dem Handy</summary><ol>
+ <li>Setz oben ein Passwort. Ohne Passwort blockt die App jeden Zugriff von außen.</li>
+ <li>Installiere <b>Tailscale</b> (tailscale.com/download, kostenlos für Privatnutzer) auf dem PC und melde dich an.</li>
+ <li>Installiere die Tailscale-App auf dem Handy und melde dich mit <b>demselben Konto</b> an.</li>
+ <li>Aktiviere im Tailscale-Adminbereich (login.tailscale.com/admin/dns) „MagicDNS“ und „HTTPS-Zertifikate“.</li>
+ <li>Öffne am PC die Eingabeaufforderung und gib ein: <code>tailscale serve --bg 8765</code>. Du bekommst eine Adresse wie <code>https://dein-pc.xxxx.ts.net</code>.</li>
+ <li>Öffne diese Adresse auf dem Handy (Tailscale muss dort an sein) und melde dich mit dem Passwort an.</li>
+ <li>Im Browser-Menü „Zum Startbildschirm hinzufügen“ oder „App installieren“ wählen, dann öffnet sie sich wie eine App.</li></ol>
+ <p class="klein" style="margin:8px 0 0">Der PC muss dafür an sein und <code>starten.bat</code> laufen. Nutz nicht „tailscale funnel“, das würde die App öffentlich ins Internet stellen. Passwort vergessen: am PC in <code>config.json</code> die Zeilen <code>zugang_hash</code> und <code>sitzung_geheimnis</code> löschen.</p></details>`}
+async function zugangSetzen(aktion){const r=await api('/api/zugang',{aktion,alt:($('#zalt')||{}).value||'',neu:($('#zneu')||{}).value||''});
+ if(r.fehler)return alert(r.fehler);toast(aktion=='entfernen'?'Passwort entfernt':'Passwort gespeichert');await load({voll:true});render()}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(()=>{})}
 async function updateLaden(){let u;try{u=await api('/api/update')}catch(e){return}window.updInfo=u;
  $('#upd').innerHTML=u.info&&u.info.neu?`<div class="update"><span><b>Update verfügbar</b> <span class="klein">Version ${esc(u.info.kurz)} · Clips und Einstellungen bleiben erhalten</span></span><button class="btn pri" onclick="updateStart()">Jetzt aktualisieren</button></div>`:(u.fehler?`<div class="warn">${esc(u.fehler)}</div>`:'');
  const v=u.info&&u.info.installiert;
@@ -1230,16 +1257,84 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _json(self, obj, code=200):
+    def _json(self, obj, code=200, kopf=None):
         b = json.dumps(obj, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(b)))
+        for k, v in (kopf or []):
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(b)
 
+    def _roh(self, b, typ, code=200, kopf=None):
+        self.send_response(code)
+        self.send_header("Content-Type", typ)
+        self.send_header("Content-Length", str(len(b)))
+        for k, v in (kopf or []):
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(b)
+
+    # ---- Zugang: Passwort, Cookie, Fernzugriff
+    def _fern(self):
+        return zugang.ist_fern(self.headers)
+
+    def _cookie_setzen(self, wert, loeschen=False):
+        c = f"{zugang.COOKIE}={'' if loeschen else wert}; Path=/; HttpOnly; SameSite=Lax; Max-Age={0 if loeschen else zugang.TAGE * 86400}"
+        if (self.headers.get("X-Forwarded-Proto") or "").lower() == "https":
+            c += "; Secure"
+        return [("Set-Cookie", c)]
+
+    def _angemeldet(self, cfg):
+        try:
+            c = SimpleCookie(self.headers.get("Cookie", ""))
+            return zugang.token_gueltig(c[zugang.COOKIE].value, cfg.get("sitzung_geheimnis", "")) if zugang.COOKIE in c else False
+        except Exception:
+            return False
+
+    OFFEN = {"/login", "/logout", "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/apple-touch-icon.png", "/api/login"}
+
+    def _zugang_ok(self, p):
+        """True, wenn die Anfrage weiterlaufen darf. Sonst wurde schon geantwortet."""
+        if p in self.OFFEN:
+            return True
+        cfg = lade_config()
+        if p == "/oauth/callback":   # kommt von Google auf 127.0.0.1, ohne Cookie; nie über einen Tunnel
+            if self._fern():
+                self._roh(b"Nicht erlaubt", "text/plain; charset=utf-8", 403)
+                return False
+            return True
+        if not cfg.get("zugang_hash"):
+            if self._fern():
+                self._roh(zugang.GESPERRT_HTML.encode(), "text/html; charset=utf-8", 403)
+                return False
+            return True
+        if self._angemeldet(cfg):
+            return True
+        if p.startswith("/api/") or p.startswith("/files/"):
+            self._json({"fehler": "Bitte neu anmelden.", "anmelden": True}, 401)
+        else:
+            self._roh(b"", "text/plain", 302, [("Location", "/login")])
+        return False
+
     def do_GET(self):
         p = urlparse(self.path).path
+        if not self._zugang_ok(p):
+            return
+        if p == "/login":
+            cfg = lade_config()
+            if not cfg.get("zugang_hash") or self._angemeldet(cfg):
+                return self._roh(b"", "text/plain", 302, [("Location", "/")])
+            return self._roh(zugang.LOGIN_HTML.encode(), "text/html; charset=utf-8", 200, [("Cache-Control", "no-store")])
+        if p == "/logout":
+            return self._roh(b"", "text/plain", 302, [("Location", "/login")] + self._cookie_setzen("", True))
+        if p == "/manifest.webmanifest":
+            return self._roh(zugang.MANIFEST.encode(), "application/manifest+json")
+        if p == "/sw.js":
+            return self._roh(zugang.SERVICE_WORKER.encode(), "text/javascript", 200, [("Service-Worker-Allowed", "/")])
+        if p in ("/icon-192.png", "/icon-512.png", "/apple-touch-icon.png"):
+            return self._roh(zugang.icon_png({"/icon-192.png": 192, "/icon-512.png": 512}.get(p, 180)), "image/png", 200, [("Cache-Control", "public, max-age=86400")])
         if p == "/":
             b = HTML.encode()
             self.send_response(200)
@@ -1387,7 +1482,47 @@ class H(BaseHTTPRequestHandler):
         except ValueError:
             return self._json({"fehler": "Ungültige Daten"}, 400)
         p = urlparse(self.path).path
+        if not self._zugang_ok(p):
+            return
+        ip = self.client_address[0] if not self._fern() else (self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or self.client_address[0])
         try:
+            if p == "/api/login":
+                cfg = lade_config()
+                if not cfg.get("zugang_hash"):
+                    return self._json({"fehler": "Es ist kein Passwort gesetzt."}, 400)
+                if BREMSE.gesperrt(ip):
+                    return self._json({"fehler": "Zu viele Versuche. Bitte in 5 Minuten noch einmal."}, 429)
+                if not zugang.pruefe_passwort(str(d.get("passwort", "")), cfg["zugang_hash"]):
+                    BREMSE.fehler(ip)
+                    time.sleep(0.6)
+                    return self._json({"fehler": "Das Passwort stimmt nicht."}, 401)
+                BREMSE.ok(ip)
+                return self._json({"ok": True}, 200, self._cookie_setzen(zugang.token(cfg["sitzung_geheimnis"])))
+            if p == "/api/zugang":
+                cfg = lade_config()
+                aktion, alt, neu = str(d.get("aktion", "")), str(d.get("alt", "")), str(d.get("neu", ""))
+                hat = bool(cfg.get("zugang_hash"))
+                if hat and aktion in ("aendern", "entfernen"):
+                    if BREMSE.gesperrt(ip):
+                        return self._json({"fehler": "Zu viele Versuche. Bitte in 5 Minuten noch einmal."}, 429)
+                    if not zugang.pruefe_passwort(alt, cfg["zugang_hash"]):
+                        BREMSE.fehler(ip)
+                        return self._json({"fehler": "Das aktuelle Passwort stimmt nicht."})
+                if aktion in ("setzen", "aendern"):
+                    if aktion == "setzen" and hat:
+                        return self._json({"fehler": "Es ist schon ein Passwort gesetzt."})
+                    if len(neu) < zugang.MIN_LAENGE:
+                        return self._json({"fehler": f"Das neue Passwort braucht mindestens {zugang.MIN_LAENGE} Zeichen."})
+                    cfg["zugang_hash"] = zugang.hash_passwort(neu)
+                    cfg["sitzung_geheimnis"] = zugang.neues_geheimnis()
+                    speichere_config(cfg)
+                    return self._json({"ok": True}, 200, self._cookie_setzen(zugang.token(cfg["sitzung_geheimnis"])))
+                if aktion == "entfernen":
+                    cfg.pop("zugang_hash", None)
+                    cfg.pop("sitzung_geheimnis", None)
+                    speichere_config(cfg)
+                    return self._json({"ok": True}, 200, self._cookie_setzen("", True))
+                raise ValueError("Unbekannte Aktion")
             if p == "/api/status":
                 ordner = sicher(d["id"])
                 if d["status"] not in ("neu", "gut", "weg") or not ordner.is_dir():
@@ -1542,6 +1677,7 @@ def main():
     PORT["port"] = a.port
     if not a.kein_watcher:
         watcher_start()
+    threading.Thread(target=lambda: [zugang.icon_png(n) for n in (180, 192, 512)], daemon=True).start()
     threading.Thread(target=watcher_ueberwachen, daemon=True).start()
     threading.Thread(target=hintergrund, daemon=True).start()
     host = "0.0.0.0" if a.lan else "127.0.0.1"
